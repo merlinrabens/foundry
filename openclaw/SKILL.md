@@ -1,7 +1,7 @@
 ---
 name: foundry
 version: 1.0.0
-description: Multi-agent code factory. Jerry orchestrates AI coding agents (Codex, Claude, Gemini) — picking the best agent per task, monitoring progress via structured status, and steering mid-flight. Isolated git worktrees + ACP (Agent Client Protocol) with PID-based process management.
+description: Multi-agent code factory. Orchestrates AI coding agents (Codex, Claude, Gemini) — picking the best agent per task, monitoring progress via structured status, and steering mid-flight. Isolated git worktrees + ACP (Agent Client Protocol) with PID-based process management.
 ---
 
 # Foundry Skill for OpenClaw
