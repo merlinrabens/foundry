@@ -84,6 +84,7 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       pull-requests: write
+      checks: write
     steps:
       - name: Post Codex Review
         uses: actions/github-script@v7
@@ -129,4 +130,19 @@ jobs:
                 await new Promise(r => setTimeout(r, attempt * 5000));
               }
             }
+
+            // Create status check reflecting the verdict
+            const conclusion = event === 'REQUEST_CHANGES' ? 'failure'
+              : event === 'APPROVE' ? 'success' : 'neutral';
+            const title = event === 'REQUEST_CHANGES' ? 'Codex found issues'
+              : event === 'APPROVE' ? 'Codex approved' : 'Codex review (no verdict)';
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Codex Review Verdict',
+              head_sha: context.payload.pull_request.head.sha,
+              status: 'completed',
+              conclusion,
+              output: { title, summary: `Review event: ${event}` }
+            });
 

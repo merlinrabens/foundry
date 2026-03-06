@@ -28,6 +28,7 @@ jobs:
       issues: read
       id-token: write
       actions: read
+      checks: write
 
     env:
       PR_NUM: ${{ github.event.pull_request.number }}
@@ -163,6 +164,38 @@ jobs:
                 }
               }
             }
+
+      - name: Set review status check
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: reviews } = await github.rest.pulls.listReviews({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number
+            });
+            const latest = reviews
+              .filter(r => (r.user.login === 'claude[bot]' || r.user.login === 'claude')
+                && r.state !== 'DISMISSED' && r.state !== 'COMMENTED')
+              .sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at))[0];
+
+            const conclusion = !latest ? 'neutral'
+              : latest.state === 'CHANGES_REQUESTED' ? 'failure'
+              : 'success';
+            const title = !latest ? 'Waiting for Claude review'
+              : latest.state === 'CHANGES_REQUESTED' ? 'Claude requested changes'
+              : 'Claude approved';
+
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Claude Review Verdict',
+              head_sha: context.payload.pull_request.head.sha,
+              status: 'completed',
+              conclusion,
+              output: { title, summary: `Review state: ${latest?.state || 'pending'}` }
+            });
 
       - name: Nudge Foundry via Telegram
         if: always()
