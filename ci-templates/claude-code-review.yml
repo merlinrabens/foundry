@@ -1,0 +1,143 @@
+# Claude Code Review — Portable CI Template
+# Requires: CLAUDE_CODE_OAUTH_TOKEN secret in repo settings
+# Blocking: YES — CHANGES_REQUESTED blocks merge
+#
+# Deploy: copy to .github/workflows/claude-code-review.yml in any repo
+#
+# NOTE: Inline PR comments via mcp__github_inline_comment__create_inline_comment
+# are currently DEACTIVATED. The MCP tool is not reliably available in the
+# claude-code-action runtime. When re-enabled, add to allowed-tools in claude_args.
+
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  claude-review:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+      actions: read
+
+    env:
+      PR_NUM: ${{ github.event.pull_request.number }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Claude Code Review
+        id: claude-review
+        uses: anthropics/claude-code-action@v1
+        env:
+          PR_NUMBER: ${{ env.PR_NUM }}
+          REPO_NAME: ${{ github.repository }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          track_progress: false
+          allowed_bots: "claude[bot]"
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            You are the Principal Engineer Reviewer. Enforce rigorous engineering standards.
+
+            ### Review Checklist
+
+            1. **Functionality & Correctness**
+                - Does the code correctly achieve the intended business logic?
+                - Are edge cases, error conditions, and unexpected inputs handled?
+                - Race conditions, concurrency issues, partial failure states?
+                - What happens on HTTP 4xx/5xx? On timeout? On malformed JSON?
+                - Are all error subclasses caught, or just the base class?
+                - Are non-2xx responses with valid JSON bodies silently treated as success?
+                - Is retry/resume safe? Would re-running create duplicates?
+
+            2. **Security (Non-Negotiable)**
+                - Is user input validated, sanitized, escaped (XSS, SQLi)?
+                - Auth/authz checks on all protected resources?
+                - Secrets, API keys, or credentials hardcoded or leaked in logs/errors?
+
+            3. **Architecture & Design**
+                - Appropriate for the system? Aligned with existing patterns?
+                - SRP? Unnecessary complexity?
+                - Is the PR atomic (single cohesive purpose)?
+
+            4. **Performance & Scalability**
+                - N+1 queries? Missing indexes? Inefficient loops?
+                - Resource leaks (unclosed files/connections, missing cleanup)?
+
+            Ignore pure style/formatting. Assume CI (lint, tests) has passed.
+
+            ### Review Rules
+
+            **CRITICAL: Use `gh pr review` to submit your review.**
+
+            - If you have ANY findings (including Nits): `gh pr review ${{ github.event.pull_request.number }} --request-changes --body "your findings"`
+            - ONLY if you have ZERO findings after thorough analysis: `gh pr review ${{ github.event.pull_request.number }} --approve --body "LGTM - no issues. <summary of what was checked>"`
+
+            ANY feedback = CHANGES_REQUESTED. Do NOT approve if you have Nits.
+            Submit exactly ONE review, then STOP.
+
+          claude_args: '--model claude-sonnet-4-6 --allowed-tools "Bash(gh pr review:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh pr comment:*),Bash(gh pr checks:*)"'
+
+      - name: Deduplicate Claude reviews
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: reviews } = await github.rest.pulls.listReviews({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number
+            });
+
+            const claudeReviews = reviews
+              .filter(r =>
+                (r.user.login === 'claude[bot]' || r.user.login === 'claude')
+                && (r.state === 'APPROVED' || r.state === 'CHANGES_REQUESTED')
+              )
+              .sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
+
+            if (claudeReviews.length > 1) {
+              console.log(`Found ${claudeReviews.length} Claude reviews, keeping latest, dismissing ${claudeReviews.length - 1} duplicates`);
+              for (const review of claudeReviews.slice(1)) {
+                try {
+                  await github.rest.pulls.dismissReview({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    pull_number: context.payload.pull_request.number,
+                    review_id: review.id,
+                    message: 'Duplicate review dismissed'
+                  });
+                  console.log(`Dismissed duplicate review ${review.id}`);
+                } catch (e) {
+                  console.log(`Could not dismiss review ${review.id}: ${e.message}`);
+                }
+              }
+            }
+
+      - name: Nudge Foundry via Telegram
+        if: always()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          [ -z "$TELEGRAM_BOT_TOKEN" ] && exit 0
+          curl -sf "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d text="foundry-nudge: ${{ github.repository }} PR#${{ github.event.pull_request.number }} reviewer=claude status=${{ job.status }}" \
+            >/dev/null 2>&1 || true
+

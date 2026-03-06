@@ -1,0 +1,12 @@
+*.db
+*.db-shm
+*.db-wal
+active-tasks.json
+active-tasks.json.bak
+logs/
+registry/
+patterns.jsonl
+config.local.env
+node_modules/
+__pycache__/
+*.pyc

@@ -1,0 +1,73 @@
+#!/bin/bash
+# Foundry v4 — Multi-Agent Code Factory
+# Git-style subcommand dispatcher. Each command lives in commands/*.bash.
+# Monitoring is 100% deterministic (bash only, zero AI tokens).
+# Three backends: Claude, Codex, Gemini. Jerry orchestrates via smart routing.
+
+set -eo pipefail
+
+# Resolve symlinks to find real location
+_SCRIPT="${BASH_SOURCE[0]}"
+while [ -L "$_SCRIPT" ]; do
+  _DIR="$(cd "$(dirname "$_SCRIPT")" && pwd)"
+  _SCRIPT="$(readlink "$_SCRIPT")"
+  [[ "$_SCRIPT" != /* ]] && _SCRIPT="$_DIR/$_SCRIPT"
+done
+FOUNDRY_DIR="$(cd "$(dirname "$_SCRIPT")" && pwd)"
+export FOUNDRY_DIR
+SWARM_DIR="${FOUNDRY_DIR}"  # backward compat alias
+export SWARM_DIR
+unset _SCRIPT _DIR
+
+# Source config + infrastructure
+source "${FOUNDRY_DIR}/config.env"
+
+# Source core modules (skip registry.bash if using SQLite)
+for f in "${FOUNDRY_DIR}/core/"*.bash; do
+  if [ "${USE_SQLITE_REGISTRY:-false}" = "true" ] && [[ "$f" == */registry.bash ]]; then
+    continue  # Skip JSON registry — using SQLite
+  fi
+  source "$f"
+done
+# Source SQLite registry if enabled (after other core modules for logging)
+if [ "${USE_SQLITE_REGISTRY:-false}" = "true" ]; then
+  source "${FOUNDRY_DIR}/core/registry_sqlite.bash"
+fi
+
+for f in "${FOUNDRY_DIR}/lib/"*.bash; do source "$f"; done
+
+# Preflight
+command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required. brew install jq"; exit 1; }
+command -v gh >/dev/null 2>&1 || { echo "ERROR: gh CLI is required. brew install gh"; exit 1; }
+if [ "${USE_SQLITE_REGISTRY:-false}" = "true" ]; then
+  command -v sqlite3 >/dev/null 2>&1 || { echo "ERROR: sqlite3 is required"; exit 1; }
+fi
+
+# Dispatch
+cmd="${1:-help}"; shift 2>/dev/null || true
+case "$cmd" in
+  spawn)              source "${FOUNDRY_DIR}/commands/spawn.bash";     cmd_spawn "$@" ;;
+  check)              source "${FOUNDRY_DIR}/commands/check.bash";     cmd_check "$@" ;;
+  status|s)           source "${FOUNDRY_DIR}/commands/status.bash";    cmd_status "$@" ;;
+  respawn)            source "${FOUNDRY_DIR}/commands/respawn.bash";   cmd_respawn "$@" ;;
+  design)             source "${FOUNDRY_DIR}/commands/design.bash";    cmd_design "$@" ;;
+  patterns)           source "${FOUNDRY_DIR}/commands/patterns.bash";  cmd_patterns "$@" ;;
+  recommend)          source "${FOUNDRY_DIR}/commands/recommend.bash"; cmd_recommend "$@" ;;
+  queue|q)            source "${FOUNDRY_DIR}/commands/queue.bash";     cmd_queue "$@" ;;
+  auto)               source "${FOUNDRY_DIR}/commands/queue.bash";     cmd_auto "$@" ;;
+  attach|a)           source "${FOUNDRY_DIR}/commands/lifecycle.bash"; cmd_attach "$@" ;;
+  logs|l)             source "${FOUNDRY_DIR}/commands/lifecycle.bash"; cmd_logs "$@" ;;
+  kill|k)             source "${FOUNDRY_DIR}/commands/lifecycle.bash"; cmd_kill "$@" ;;
+  steer)              source "${FOUNDRY_DIR}/commands/lifecycle.bash"; cmd_steer "$@" ;;
+  steer-wait|sw)      source "${FOUNDRY_DIR}/commands/lifecycle.bash"; cmd_steer_wait "$@" ;;
+  open|o)             source "${FOUNDRY_DIR}/commands/lifecycle.bash"; cmd_open "$@" ;;
+  orchestrate|orch)   source "${FOUNDRY_DIR}/commands/orchestrate.bash"; cmd_orchestrate "$@" ;;
+  peek|p)             source "${FOUNDRY_DIR}/commands/peek.bash"; cmd_peek "$@" ;;
+  cleanup)            source "${FOUNDRY_DIR}/commands/cleanup.bash";   cmd_cleanup "$@" ;;
+  scan)               source "${FOUNDRY_DIR}/commands/scan.bash";      cmd_scan "$@" ;;
+  register)           source "${FOUNDRY_DIR}/commands/register.bash";  cmd_register "$@" ;;
+  nudge)              source "${FOUNDRY_DIR}/commands/nudge.bash";     cmd_nudge "$@" ;;
+  diagnose|diag)      source "${FOUNDRY_DIR}/commands/diagnose.bash";  cmd_diagnose "$@" ;;
+  help|-h|--help)     source "${FOUNDRY_DIR}/commands/help.bash";      cmd_help "$@" ;;
+  *)                  source "${FOUNDRY_DIR}/commands/help.bash";      cmd_help "$@" ;;
+esac
