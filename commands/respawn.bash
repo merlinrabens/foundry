@@ -77,20 +77,18 @@ cmd_respawn() {
     }
   fi
 
-  # ── Ensure runner script exists ──
-  if [ ! -f "${worktree}/.foundry-run.sh" ]; then
-    log_warn "Runner script missing, regenerating..."
-    local env_block=""
-    [ -n "${OPENAI_API_KEY:-}" ]             && env_block+="export OPENAI_API_KEY='${OPENAI_API_KEY}'"$'\n'
-    # Claude OAuth token is refreshed at launch time in runner_script.bash (not baked here)
-    [ -n "${GOOGLE_API_KEY:-}" ]             && env_block+="export GOOGLE_API_KEY='${GOOGLE_API_KEY}'"$'\n'
-    [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ]   && env_block+="export OP_SERVICE_ACCOUNT_TOKEN='${OP_SERVICE_ACCOUNT_TOKEN}'"$'\n'
-    [ -n "${GITHUB_TOKEN:-}" ]               && env_block+="export GITHUB_TOKEN='${GITHUB_TOKEN}'"$'\n'
-    [ -n "${GH_TOKEN:-}" ]                   && env_block+="export GH_TOKEN='${GH_TOKEN}'"$'\n'
-    env_block+='[ -f "$HOME/.zprofile" ] && source "$HOME/.zprofile" 2>/dev/null'$'\n'
-    env_block+='[ -f "$HOME/.zshrc" ] && source "$HOME/.zshrc" 2>/dev/null'$'\n'
-    _write_runner_script "$agent" "$worktree" "$model" "$log_file" "$done_file" "$env_block" "high"
-  fi
+  # ── Always regenerate runner script (ensures fresh token refresh + template fixes) ──
+  log "Regenerating runner script..."
+  local env_block=""
+  [ -n "${OPENAI_API_KEY:-}" ]             && env_block+="export OPENAI_API_KEY='${OPENAI_API_KEY}'"$'\n'
+  # Claude OAuth token is refreshed at launch time in runner_script.bash (not baked here)
+  [ -n "${GOOGLE_API_KEY:-}" ]             && env_block+="export GOOGLE_API_KEY='${GOOGLE_API_KEY}'"$'\n'
+  [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ]   && env_block+="export OP_SERVICE_ACCOUNT_TOKEN='${OP_SERVICE_ACCOUNT_TOKEN}'"$'\n'
+  [ -n "${GITHUB_TOKEN:-}" ]               && env_block+="export GITHUB_TOKEN='${GITHUB_TOKEN}'"$'\n'
+  [ -n "${GH_TOKEN:-}" ]                   && env_block+="export GH_TOKEN='${GH_TOKEN}'"$'\n'
+  env_block+='[ -f "$HOME/.zprofile" ] && source "$HOME/.zprofile" 2>/dev/null'$'\n'
+  env_block+='[ -f "$HOME/.zshrc" ] && source "$HOME/.zshrc" 2>/dev/null'$'\n'
+  _write_runner_script "$agent" "$worktree" "$model" "$log_file" "$done_file" "$env_block" "high"
 
   # ── Gather failure context (delegated to lib/respawn_helpers.bash) ──
   local status
