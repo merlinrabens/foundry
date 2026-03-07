@@ -343,9 +343,21 @@ cmd_check() {
             _try_respawn_or_exhaust "$id" "$attempts" "$max_attempts" \
               "Agent produced no changes (exit 0)" "$agent" "$model" "$retries" "$started" "$project"
           else
-            echo -e "${YELLOW}Done but no PR created ($commit_count commit(s) on branch)${NC}"
-            _kill_task_pid "$task_pid"
-            registry_batch_update "$id" "status=done-no-pr" "completedAt=$(date +%s)"
+            # Check if a PR was actually created (may have been missed)
+            local late_pr
+            late_pr=$(cd "$worktree" 2>/dev/null && gh_retry gh pr list --head "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" --json number,url --jq '.[0]' 2>/dev/null || echo "")
+            if [ -n "$late_pr" ] && [ "$late_pr" != "null" ]; then
+              local late_pr_num late_pr_url
+              late_pr_num=$(echo "$late_pr" | jq -r '.number')
+              late_pr_url=$(echo "$late_pr" | jq -r '.url')
+              echo -e "${GREEN}Late PR discovery: #${late_pr_num}${NC}"
+              _kill_task_pid "$task_pid"
+              registry_batch_update "$id" "status=pr-open" "pr=$late_pr_num" "completedAt=$(date +%s)"
+            else
+              echo -e "${YELLOW}Done but no PR created ($commit_count commit(s) on branch)${NC}"
+              _kill_task_pid "$task_pid"
+              registry_batch_update "$id" "status=done-no-pr" "completedAt=$(date +%s)"
+            fi
           fi
         fi
         continue
