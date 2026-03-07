@@ -4,8 +4,8 @@ cmd_register() {
   local repo_path="$1" pr_number="$2" agent_override="$3"
   if [ -z "$repo_path" ] || [ -z "$pr_number" ]; then
     log_err "Usage: foundry register <repo-path> <pr-number> [agent]"
-    log_err "  Example: foundry register ~/projects/your-org/your-repo 884"
-    log_err "  Example: foundry register ~/projects/your-org/your-repo 884 claude"
+    log_err "  Example: foundry register ~/projects/primal-meat-club/aura-shopify 884"
+    log_err "  Example: foundry register ~/projects/primal-meat-club/aura-shopify 884 claude"
     exit 1
   fi
 

@@ -77,7 +77,7 @@ gh_retry() {
 }
 
 # ─── Telegram ─────────────────────────────────────────────────────────────
-TG_CHAT_ID="${TG_CHAT_ID:-YOUR_CHAT_ID}"
+TG_CHAT_ID="${TG_CHAT_ID:-8193483231}"
 
 tg_notify() {
   [ "$NO_NOTIFY" -eq 1 ] && return 0
@@ -340,7 +340,7 @@ for idx in $(seq 0 $((TASK_COUNT - 1))); do
   [ "$PR_URL" = "null" ] && PR_URL=""
 
   # If we have a PR number, get its state
-  # Use repo slug from prUrl if available (handles cross-repo PRs like theme-repo vs main-repo)
+  # Use repo slug from prUrl if available (handles cross-repo PRs like primal-theme vs aura-shopify)
   pr_repo_slug="$REPO_SLUG"
   if [ -n "$T_PR_URL" ] && [[ "$T_PR_URL" =~ github\.com/([^/]+/[^/]+)/pull ]]; then
     pr_repo_slug="${BASH_REMATCH[1]}"

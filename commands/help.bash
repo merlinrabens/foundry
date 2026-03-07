@@ -25,17 +25,17 @@ COMMANDS
   queue                             Show priority-scored spec backlog
 
 EXAMPLES
-  foundry spawn ~/projects/your-repo specs/backlog/05-dashboard.md
-  foundry spawn ~/projects/your-repo 'Add dark mode' claude-opus-4-6
-  foundry spawn ~/projects/your-repo specs/04-admin.md codex:high
-  foundry spawn ~/projects/your-repo specs/04-admin.md gemini
-  foundry spawn ~/projects/your-repo specs/04-admin.md openclaw  # Foundry picks best
-  foundry orchestrate ~/projects/your-repo specs/05-dashboard.md
+  foundry spawn ~/projects/aura-shopify specs/backlog/05-dashboard.md
+  foundry spawn ~/projects/growthpulse 'Add dark mode' claude-opus-4-6
+  foundry spawn ~/projects/aura-shopify specs/04-admin.md codex:high
+  foundry spawn ~/projects/aura-shopify specs/04-admin.md gemini
+  foundry spawn ~/projects/aura-shopify specs/04-admin.md openclaw  # Jerry picks best
+  foundry orchestrate ~/projects/aura-shopify specs/05-dashboard.md
   foundry peek aura-05-dashboard
-  foundry design ~/projects/your-repo specs/05-dashboard.md codex:high
+  foundry design ~/projects/aura-shopify specs/05-dashboard.md codex:high
   foundry check
   foundry respawn aura-05-dashboard
-  foundry register ~/projects/your-org/your-repo 884
+  foundry register ~/projects/primal-meat-club/aura-shopify 884
   foundry steer aura-05-dashboard 'Focus on API first, not the UI'
   foundry recommend specs/backlog/05-dashboard.md
   foundry queue
@@ -44,7 +44,7 @@ EXAMPLES
   foundry status
   foundry cleanup
 
-MODEL ROUTING (three backends + Foundry routing)
+MODEL ROUTING (three backends + Jerry routing)
   codex               Default workhorse — backend, refactors, bugs
   codex:high          Codex with high reasoning effort (recommended)
   codex:medium        Codex with medium reasoning effort
@@ -52,13 +52,13 @@ MODEL ROUTING (three backends + Foundry routing)
   claude-opus-4-6     Complex reasoning, architecture decisions
   gemini              Google Gemini (design sensibility, UI specs)
   gemini:model-name   Gemini with specific model
-  openclaw            Foundry smart routing (auto-picks best backend)
-  openclaw:codex      Foundry routing with backend hint
-  openclaw:claude     Foundry routing with backend hint
-  openclaw:gemini     Foundry routing with backend hint
+  openclaw            Jerry smart routing (auto-picks best backend)
+  openclaw:codex      Jerry routing with backend hint
+  openclaw:claude     Jerry routing with backend hint
+  openclaw:gemini     Jerry routing with backend hint
 
-ORCHESTRATION (Foundry as orchestrator)
-  orchestrate <repo> <spec|task>   Foundry picks agent + spawns + JSON output
+ORCHESTRATION (Jerry as orchestrator)
+  orchestrate <repo> <spec|task>   Jerry picks agent + spawns + JSON output
   peek <task-id>                   Structured JSON status (registry + live)
   steer-wait <task-id> <msg>       Steer + wait for response (up to 30s)
 

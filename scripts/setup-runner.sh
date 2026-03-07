@@ -8,8 +8,8 @@
 #   bash setup-runner.sh <github-org-or-owner/repo>
 #
 # Examples:
-#   bash setup-runner.sh your-org                          # org-level runner (covers all repos)
-#   bash setup-runner.sh your-org/your-repo             # repo-level runner (single repo)
+#   bash setup-runner.sh primal-meat-club                          # org-level runner (covers all repos)
+#   bash setup-runner.sh primal-meat-club/aura-shopify             # repo-level runner (single repo)
 #
 # Prerequisites:
 #   - gh CLI authenticated with admin access
@@ -22,8 +22,8 @@ if [ -z "$TARGET" ]; then
   echo "Usage: $0 <github-org-or-owner/repo>"
   echo ""
   echo "Examples:"
-  echo "  $0 your-org                    # org-level (recommended)"
-  echo "  $0 your-org/your-repo       # repo-level"
+  echo "  $0 primal-meat-club                    # org-level (recommended)"
+  echo "  $0 primal-meat-club/aura-shopify       # repo-level"
   exit 1
 fi
 

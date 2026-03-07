@@ -41,15 +41,15 @@ cmd_spawn() {
     echo "  --prompt-file <file>  Use custom prompt instead of template (for orchestrator-driven spawns)"
     echo ""
     echo "Examples:"
-    echo "  foundry spawn ~/projects/your-repo specs/backlog/05-dashboard.md"
-    echo "  foundry spawn ~/projects/your-repo 'Add dark mode support'"
-    echo "  foundry spawn ~/projects/your-repo specs/backlog/04-admin.md claude-opus-4-6"
-    echo "  foundry spawn ~/projects/your-repo specs/backlog/04-admin.md codex"
-    echo "  foundry spawn ~/projects/your-repo specs/backlog/04-admin.md codex:high"
-    echo "  foundry spawn ~/projects/your-repo specs/backlog/04-admin.md gemini"
-    echo "  foundry spawn ~/projects/your-repo specs/backlog/04-admin.md openclaw          # Foundry picks best agent"
-    echo "  foundry spawn ~/projects/your-repo specs/backlog/04-admin.md openclaw:codex   # Foundry hint: use codex"
-    echo "  foundry spawn ~/projects/your-repo specs/backlog/04-admin.md codex --prompt-file /tmp/my-prompt.md"
+    echo "  foundry spawn ~/projects/aura-shopify specs/backlog/05-dashboard.md"
+    echo "  foundry spawn ~/projects/growthpulse 'Add dark mode support'"
+    echo "  foundry spawn ~/projects/aura-shopify specs/backlog/04-admin.md claude-opus-4-6"
+    echo "  foundry spawn ~/projects/aura-shopify specs/backlog/04-admin.md codex"
+    echo "  foundry spawn ~/projects/aura-shopify specs/backlog/04-admin.md codex:high"
+    echo "  foundry spawn ~/projects/aura-shopify specs/backlog/04-admin.md gemini"
+    echo "  foundry spawn ~/projects/aura-shopify specs/backlog/04-admin.md openclaw          # Jerry picks best agent"
+    echo "  foundry spawn ~/projects/aura-shopify specs/backlog/04-admin.md openclaw:codex   # Jerry hint: use codex"
+    echo "  foundry spawn ~/projects/aura-shopify specs/backlog/04-admin.md codex --prompt-file /tmp/my-prompt.md"
     return 1
   fi
 
@@ -60,15 +60,15 @@ cmd_spawn() {
   local gemini_model="$GEMINI_MODEL_OUT"
   model="$MODEL_OUT"
 
-  # ── Foundry smart routing: resolve meta-backend to concrete agent ──
-  if [ "$agent_backend" = "auto" ]; then
+  # ── Jerry smart routing: resolve meta-backend to concrete agent ──
+  if [ "$agent_backend" = "jerry" ]; then
     # Determine task content early for routing (may read spec file)
     local routing_content="$spec_or_task"
     [ -f "$spec_or_task" ] && routing_content=$(head -100 "$spec_or_task")
     [ -f "$repo_dir/$spec_or_task" ] && routing_content=$(head -100 "$repo_dir/$spec_or_task")
 
     _jerry_select_agent "$repo_dir" "$routing_content" "$model"
-    log "Foundry routing: selected $JERRY_BACKEND (hint: $model)"
+    log "Jerry routing: selected $JERRY_BACKEND (hint: $model)"
     detect_model_backend "$JERRY_MODEL"
     agent_backend="$AGENT_BACKEND_OUT"
     codex_reasoning="$CODEX_REASONING_OUT"

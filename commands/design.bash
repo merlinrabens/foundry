@@ -13,8 +13,8 @@ cmd_design() {
     echo "Default then-agent: $CLAUDE_DEFAULT"
     echo ""
     echo "Examples:"
-    echo "  foundry design ~/projects/your-repo specs/backlog/05-dashboard.md"
-    echo "  foundry design ~/projects/your-repo specs/backlog/05-dashboard.md codex:high"
+    echo "  foundry design ~/projects/aura-shopify specs/backlog/05-dashboard.md"
+    echo "  foundry design ~/projects/aura-shopify specs/backlog/05-dashboard.md codex:high"
     return 1
   fi
 

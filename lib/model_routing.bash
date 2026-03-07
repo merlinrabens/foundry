@@ -20,11 +20,11 @@ detect_model_backend() {
   MODEL_OUT="$input"
 
   if [[ "$input" == openclaw* ]]; then
-    AGENT_BACKEND_OUT="auto"   # Meta-backend — resolved at spawn time by _jerry_select_agent
+    AGENT_BACKEND_OUT="jerry"   # Meta-backend — resolved at spawn time by _jerry_select_agent
     if [[ "$input" == *:* ]]; then
-      MODEL_OUT="${input#*:}"   # Hint: openclaw:codex → model=codex (Foundry respects hints)
+      MODEL_OUT="${input#*:}"   # Hint: openclaw:codex → model=codex (Jerry respects hints)
     else
-      MODEL_OUT="auto"          # Let Foundry pick the best backend
+      MODEL_OUT="auto"          # Let Jerry pick the best backend
     fi
   elif [[ "$input" == codex* ]]; then
     AGENT_BACKEND_OUT="codex"

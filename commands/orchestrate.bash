@@ -1,4 +1,4 @@
-# commands/orchestrate.bash — Foundry's primary command: smart routing + spawn + JSON output
+# commands/orchestrate.bash — Jerry's primary command: smart routing + spawn + JSON output
 
 cmd_orchestrate() {
   local repo_dir="$1" spec_or_task="$2" hint="${3:-auto}"
@@ -6,13 +6,13 @@ cmd_orchestrate() {
   if [ -z "$repo_dir" ] || [ -z "$spec_or_task" ]; then
     echo "Usage: foundry orchestrate <repo-path> <spec-file | task-description | issue-N> [hint]"
     echo ""
-    echo "Foundry orchestrator command. Picks the best agent, spawns it, returns JSON."
+    echo "Jerry's orchestrator command. Picks the best agent, spawns it, returns JSON."
     echo ""
     echo "Hints: auto (default), codex, claude, gemini"
     echo ""
     echo "Examples:"
-    echo "  foundry orchestrate ~/projects/your-repo specs/backlog/05-dashboard.md"
-    echo "  foundry orchestrate ~/projects/your-repo 'Add dark mode' codex"
+    echo "  foundry orchestrate ~/projects/aura-shopify specs/backlog/05-dashboard.md"
+    echo "  foundry orchestrate ~/projects/aura-shopify 'Add dark mode' codex"
     echo "  foundry orchestrate ~/projects/lead-gen issue-6          # GitHub Issue #6"
     echo "  foundry orchestrate ~/projects/lead-gen issue:6 codex    # with agent hint"
     return 1
@@ -75,12 +75,12 @@ cmd_orchestrate() {
     task_content="$spec_or_task"
   fi
 
-  # Foundry selects the agent
+  # Jerry selects the agent
   _jerry_select_agent "$repo_dir" "$task_content" "$hint"
   local selected_backend="$JERRY_BACKEND"
   local selected_model="$JERRY_MODEL"
 
-  log "Foundry selected: $selected_backend (model: $selected_model, hint: $hint)"
+  log "Jerry selected: $selected_backend (model: $selected_model, hint: $hint)"
 
   # Spawn using the selected backend
   # Source spawn if not already loaded

@@ -1,6 +1,6 @@
 #!/bin/bash
-# lib/jerry_routing.bash — Foundry smart agent selection
-# Resolves the "auto" meta-backend into a concrete backend (codex/claude/gemini).
+# lib/jerry_routing.bash — Jerry's smart agent selection
+# Resolves the "jerry" meta-backend into a concrete backend (codex/claude/gemini).
 [[ -n "${_LIB_JERRY_ROUTING_LOADED:-}" ]] && return 0
 _LIB_JERRY_ROUTING_LOADED=1
 

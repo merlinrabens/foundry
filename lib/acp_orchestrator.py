@@ -7,7 +7,7 @@ Manages the full lifecycle of a single agent session:
 
 Supports three backends: codex, claude, gemini.
 
-OpenClaw acts as the orchestrator layer above this — picking which backend to use
+Jerry acts as the orchestrator layer above this — picking which backend to use
 and monitoring progress via status files.
 
 Usage:
@@ -82,7 +82,7 @@ class ACPOrchestrator:
         self._session_id: str | None = None
         self._steer_pending = False
         self._stdout_reader: asyncio.StreamReader | None = None
-        # Status tracking for Foundry's peek command
+        # Status tracking for Jerry's peek command
         self._tools_used: list[str] = []
         self._files_modified = 0
         self._last_tool: str | None = None
@@ -132,7 +132,7 @@ class ACPOrchestrator:
         return None
 
     def _write_status(self):
-        """Write structured status JSON for Foundry's peek command."""
+        """Write structured status JSON for Jerry's peek command."""
         status = {
             "phase": self._phase,
             "tools_used": sorted(set(self._tools_used)),

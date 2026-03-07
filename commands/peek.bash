@@ -1,4 +1,4 @@
-# commands/peek.bash — Structured JSON status for Foundry monitoring
+# commands/peek.bash — Structured JSON status for Jerry's monitoring
 
 cmd_peek() {
   local task_id="$1"

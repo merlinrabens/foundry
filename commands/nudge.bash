@@ -11,8 +11,8 @@ cmd_nudge() {
     echo "       foundry nudge <owner/repo> <pr-number>"
     echo ""
     echo "Examples:"
-    echo "  foundry nudge 'foundry-nudge: your-org/your-repo PR#906 reviewer=claude status=success'"
-    echo "  foundry nudge your-org/your-repo 906"
+    echo "  foundry nudge 'foundry-nudge: primal-meat-club/aura-shopify PR#906 reviewer=claude status=success'"
+    echo "  foundry nudge primal-meat-club/aura-shopify 906"
     return 1
   fi
 
