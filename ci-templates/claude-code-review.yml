@@ -85,78 +85,21 @@ jobs:
                 - N+1 queries? Missing indexes? Inefficient loops?
                 - Resource leaks (unclosed files/connections)?
 
-            ### Output Format (MANDATORY)
+            ### Output Format
 
-            Your review body MUST use GitHub-flavored Markdown with this exact structure:
+            Structure your review with markdown headers and bullet points:
+            - `## Review Summary` — 1-2 sentence verdict
+            - `### Critical` / `### Medium` / `### Nit` — findings with `file:line` references and **Fix:** suggestions
+            - `### Checked & Clean` — areas you verified and found no issues
+            - Omit empty sections. Each finding gets its own bullet point.
 
-            ```
-            ## Review Summary
+            ### Submission
 
-            <1-2 sentence verdict>
+            Submit your review using `gh pr review`:
+            - ANY findings (including Nits) → `--request-changes`
+            - ZERO findings → `--approve`
 
-            ### Critical
-            - **`file.py:42`** — <description of critical issue>
-              **Fix:** <exact fix suggestion>
-
-            ### Medium
-            - **`file.py:99`** — <description>
-              **Fix:** <suggestion>
-
-            ### Nit
-            - **`file.py:12`** — <minor suggestion>
-
-            ### Checked & Clean
-            - <area 1>: <what you verified>
-            - <area 2>: <what you verified>
-            ```
-
-            Rules for the output:
-            - ALWAYS use the sections above. Omit a section ONLY if it has zero items.
-            - Each finding MUST include the file path and line number.
-            - Each finding MUST include a **Fix:** line with actionable guidance.
-            - The "Checked & Clean" section lists areas you reviewed and found no issues.
-            - Use bullet points, headers, code blocks. NEVER output a wall of text.
-
-            ### Submission Rules
-
-            **CRITICAL: Use `gh pr review` to submit your review with a heredoc for the body.**
-
-            If you have ANY findings (including Nits), request changes:
-            ```
-            gh pr review ${{ github.event.pull_request.number }} --request-changes --body "$(cat <<'REVIEW'
-            ## Review Summary
-
-            <your 1-2 sentence verdict here>
-
-            ### Critical
-            - **`file.py:42`** — <issue description>
-              **Fix:** <fix suggestion>
-
-            ### Checked & Clean
-            - <what you verified>
-            REVIEW
-            )"
-            ```
-
-            ONLY if you have ZERO findings, approve:
-            ```
-            gh pr review ${{ github.event.pull_request.number }} --approve --body "$(cat <<'REVIEW'
-            ## Review Summary
-
-            All clear. <brief summary of what you checked>
-
-            ### Checked & Clean
-            - <area>: <what you verified>
-            REVIEW
-            )"
-            ```
-
-            **FORMATTING IS NON-NEGOTIABLE:**
-            - Your review body MUST contain markdown headers (##, ###) and bullet points
-            - NEVER submit a review as a single paragraph or wall of text
-            - Each finding MUST be on its own bullet point with file:line reference
-            - ANY feedback = CHANGES_REQUESTED. Do NOT approve if you have Nits.
-            - Submit exactly ONE review, then STOP.
+            Submit exactly ONE review, then STOP.
 
           claude_args: '--model claude-sonnet-4-6 --allowed-tools "Bash(gh pr review:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh pr comment:*),Bash(gh pr checks:*)"'
 
