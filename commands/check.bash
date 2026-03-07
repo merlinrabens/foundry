@@ -116,15 +116,17 @@ _check_pr_status() {
   if [ "$_PR_CLAUDE_APPROVED" -gt 0 ] || [ "$_PR_CODEX_APPROVED" -gt 0 ]; then
     echo -e "${GREEN}READY TO MERGE -> $_PR_URL${NC}"
     registry_update_field "$id" "status" "ready"
-    registry_update_field "$id" "lastNotifiedState" "ready"
     # Add label to trigger visual evidence workflow
     (cd "$check_dir" 2>/dev/null && gh label create "ready-for-evidence" \
       --color 0E8A16 --description "Foundry: triggers visual evidence" \
       --force 2>/dev/null) || true
     (cd "$check_dir" 2>/dev/null && gh pr edit ${pr_ref:+"$pr_ref"} \
       --add-label "ready-for-evidence" 2>/dev/null) || true
-    tg_notify "PR $pr_ref ready to merge [$_PR_CHECKS_SUMMARY] - $_PR_URL" \
-      || registry_update_field "$id" "lastNotifiedState" ""
+    if [ "$last_notified" != "ready" ]; then
+      registry_update_field "$id" "lastNotifiedState" "ready"
+      tg_notify "PR $pr_ref ready to merge [$_PR_CHECKS_SUMMARY] - $_PR_URL" \
+        || registry_update_field "$id" "lastNotifiedState" ""
+    fi
     return 0  # Ready
   else
     echo -e "${BLUE}CI passed, awaiting reviews${NC}"
