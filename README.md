@@ -24,9 +24,9 @@
 
 Add a `foundry` label to a GitHub Issue. Go to sleep. Wake up to a pull request with three AI code reviews, all fixes applied, CI green.
 
-```
-GitHub Issue (foundry label)  →  Agent writes code  →  3 AI reviewers  →  Fixes applied  →  PR ready to merge
-```
+<p align="center">
+  <img src="docs/gifs/foundry-issue-to-pr.gif" alt="GitHub Issue → PR in one command" width="100%">
+</p>
 
 No prompts. No terminals. No babysitting. The issue body IS the spec. The agent figures out the rest.
 
@@ -81,6 +81,12 @@ CI passes + all reviewers approve = ready to merge
 PR merges → Issue auto-closes → Linear board updates
 ```
 
+### Spawning an Agent
+
+<p align="center">
+  <img src="docs/gifs/foundry-spawn.gif" alt="foundry orchestrate in action" width="100%">
+</p>
+
 ### Agent Routing
 
 Not every agent is good at everything:
@@ -108,13 +114,33 @@ The router is a grep. It works 85% of the time. The other 15% you override with 
 
 Every PR gets reviewed by **three independent AI reviewers**:
 
-1. **Claude** (Sonnet 4.6) — adversarial. *"Your default stance is REQUEST CHANGES."*
+1. **Claude** (Opus 4.6) — Principal Engineer review. Architecture, security, correctness, maintainability. Blocking.
 2. **Codex** — architecture, API contracts, test coverage. Creates blocking status check.
 3. **Gemini** — design patterns, naming, documentation. Advisory.
 
 **Critical: all three must report before the agent starts fixing.** This prevents wasted cycles where fixing one reviewer's feedback breaks another's.
 
 Budget: 20 fix cycles per attempt. 5 attempts per task. If it can't converge, it notifies you.
+
+---
+
+## The Dashboard
+
+<p align="center">
+  <img src="docs/gifs/foundry-status.gif" alt="foundry status dashboard" width="100%">
+</p>
+
+`foundry status` shows all active tasks with CRKGS columns:
+
+| Letter | Gate |
+|--------|------|
+| **C** | CI green |
+| **R** | Claude approved |
+| **K** | Codex approved |
+| **G** | Gemini approved |
+| **S** | Branch synced |
+
+A task showing `CRKGS` is ready to merge.
 
 ---
 
@@ -131,14 +157,6 @@ Foundry checks every 30 minutes:
 
 80% complete on attempt 1. 15% need one respawn. 5% need a human.
 
-```
-foundry status
-```
-
-<p align="center">
-  <img src="docs/foundry-status.png" alt="Foundry Status Dashboard" width="100%">
-</p>
-
 ---
 
 ## Visual Evidence: Agents That Prove Their Work
@@ -153,13 +171,6 @@ Add the `ready-for-evidence` label to trigger the `visual-evidence.yml` workflow
 4. Posts them as PR comments
 
 Your stakeholders open the PR, see screenshots, approve or request changes. No dev environment needed.
-
-```bash
-# Detection logic (in lib/video_evidence.bash)
-has_frontend_changes → grep for .tsx, .jsx, .vue, .css, .scss
-check_screenshots_in_pr → grep for ![alt](url), <img>, <video>
-# Result: "true" (found), "false" (missing), "null" (no frontend changes)
-```
 
 ---
 
@@ -276,6 +287,10 @@ export OPENAI_API_KEY="sk-..."
 
 # Optional: Gemini
 export GOOGLE_API_KEY="AIza..."
+
+# Optional: Telegram notifications
+export TG_CHAT_ID="your-chat-id"
+export OPENCLAW_TG_BOT_TOKEN="your-bot-token"
 ```
 
 ### 2. GitHub Repository Secrets

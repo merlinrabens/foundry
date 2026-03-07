@@ -12,7 +12,7 @@ log_warn() { echo -e "${YELLOW}[foundry]${NC} $*"; }
 log_err()  { echo -e "${RED}[foundry]${NC} $*"; }
 
 # ─── Telegram Notifications ──────────────────────────────────────────
-TG_CHAT_ID="${TG_CHAT_ID:-8193483231}"
+TG_CHAT_ID="${TG_CHAT_ID:-}"
 
 tg_notify() {
   local message="$1"

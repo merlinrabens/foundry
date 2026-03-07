@@ -77,7 +77,7 @@ gh_retry() {
 }
 
 # ─── Telegram ─────────────────────────────────────────────────────────────
-TG_CHAT_ID="${TG_CHAT_ID:-8193483231}"
+TG_CHAT_ID="${TG_CHAT_ID:-}"
 
 tg_notify() {
   [ "$NO_NOTIFY" -eq 1 ] && return 0
