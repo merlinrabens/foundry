@@ -119,13 +119,44 @@ jobs:
 
             ### Submission Rules
 
-            **CRITICAL: Use `gh pr review` to submit your review.**
+            **CRITICAL: Use `gh pr review` to submit your review with a heredoc for the body.**
 
-            - If you have ANY findings (including Nits): `gh pr review ${{ github.event.pull_request.number }} --request-changes --body "$(cat <<'REVIEW'\n<your formatted review>\nREVIEW\n)"`
-            - ONLY if you have ZERO findings: `gh pr review ${{ github.event.pull_request.number }} --approve --body "$(cat <<'REVIEW'\n<your formatted review>\nREVIEW\n)"`
+            If you have ANY findings (including Nits), request changes:
+            ```
+            gh pr review ${{ github.event.pull_request.number }} --request-changes --body "$(cat <<'REVIEW'
+            ## Review Summary
 
-            ANY feedback = CHANGES_REQUESTED. Do NOT approve if you have Nits.
-            Submit exactly ONE review, then STOP.
+            <your 1-2 sentence verdict here>
+
+            ### Critical
+            - **`file.py:42`** — <issue description>
+              **Fix:** <fix suggestion>
+
+            ### Checked & Clean
+            - <what you verified>
+            REVIEW
+            )"
+            ```
+
+            ONLY if you have ZERO findings, approve:
+            ```
+            gh pr review ${{ github.event.pull_request.number }} --approve --body "$(cat <<'REVIEW'
+            ## Review Summary
+
+            All clear. <brief summary of what you checked>
+
+            ### Checked & Clean
+            - <area>: <what you verified>
+            REVIEW
+            )"
+            ```
+
+            **FORMATTING IS NON-NEGOTIABLE:**
+            - Your review body MUST contain markdown headers (##, ###) and bullet points
+            - NEVER submit a review as a single paragraph or wall of text
+            - Each finding MUST be on its own bullet point with file:line reference
+            - ANY feedback = CHANGES_REQUESTED. Do NOT approve if you have Nits.
+            - Submit exactly ONE review, then STOP.
 
           claude_args: '--model claude-sonnet-4-6 --allowed-tools "Bash(gh pr review:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh pr comment:*),Bash(gh pr checks:*)"'
 
