@@ -3,10 +3,6 @@
 # Blocking: YES — CHANGES_REQUESTED blocks merge
 #
 # Deploy: copy to .github/workflows/claude-code-review.yml in any repo
-#
-# NOTE: Inline PR comments via mcp__github_inline_comment__create_inline_comment
-# are currently DEACTIVATED. The MCP tool is not reliably available in the
-# claude-code-action runtime. When re-enabled, add to allowed-tools in claude_args.
 
 name: Claude Code Review
 
@@ -30,21 +26,15 @@ jobs:
       actions: read
       checks: write
 
-    env:
-      PR_NUM: ${{ github.event.pull_request.number }}
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Run Claude Code Review
         id: claude-review
         uses: anthropics/claude-code-action@v1
-        env:
-          PR_NUMBER: ${{ env.PR_NUM }}
-          REPO_NAME: ${{ github.repository }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           track_progress: false
@@ -53,55 +43,65 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            You are the Principal Engineer Reviewer for a high-velocity startup. Your mandate: enforce rigorous engineering while respecting development speed.
+            You are acting as the Principal Engineer Reviewer for a high-velocity, lean startup. Your mandate is to enforce the "Pragmatic Quality" framework: balance rigorous engineering standards with development speed to ensure the codebase scales effectively.
 
-            ### Review Philosophy
+            ### Review Philosophy & Directives
 
-            1. **Net Positive > Perfection:** A change that improves code health ships. Don't block on imperfections.
-            2. **Substance over style:** Assume CI (lint, tests) has passed. Focus on logic, security, architecture.
-            3. **Signal intent:** Prefix minor polish suggestions with "**Nit:**".
+            1.  **Net Positive > Perfection:** Your primary objective is to determine if the change *definitively improves* the overall code health. Do not block on imperfections if the change is a net improvement.
+            2.  **Focus on Substance:** Assume automated CI (Linters, Formatters, basic tests) has passed. Focus your analysis strictly on architecture, design, business logic, security, and complex interactions. Do not comment on style or formatting.
+            3.  **Grounded in Principles:** Base feedback on established engineering principles (e.g., SOLID, DRY) and technical facts, not opinions.
+            4.  **Signal Intent:** Prefix minor, optional polish suggestions with "**Nit:**".
 
             ### Hierarchical Review Checklist
 
-            Analyze changes using this framework, in priority order:
+            Analyze the changes using the following framework, prioritizing these high-impact areas:
 
-            1. **Security (Non-Negotiable)**
-                - User input validated, sanitized, escaped (XSS, SQLi)?
-                - Auth/authz on all protected resources?
-                - Secrets/credentials hardcoded or leaked in logs/errors?
+            1. **Architectural Design & Integrity**
+                - Is the design appropriate for the system and aligned with existing architectural patterns?
+                - Is the code appropriately modular? Does it adhere to the Single Responsibility Principle (SRP)?
+                - Does it introduce unnecessary complexity, or could a simpler, more scalable solution achieve the same goal?
+                - Is the PR atomic? (Does it fulfill a single, cohesive purpose, or is it bundling unrelated changes?)
 
             2. **Functionality & Correctness**
-                - Business logic correct? Edge cases handled?
-                - Race conditions, concurrency, partial failure states?
-                - HTTP 4xx/5xx handling? Timeout? Malformed JSON?
-                - Retry/resume safe? Would re-running create duplicates?
+                - Does the code correctly achieve the intended business logic?
+                - Are edge cases, error conditions, and unexpected inputs handled gracefully and robustly?
+                - Identify potential logical flaws, race conditions, or concurrency issues.
 
-            3. **Architecture & Design**
-                - Aligned with existing patterns? SRP?
-                - Is the PR atomic (single cohesive purpose)?
-                - Unnecessary complexity?
+            3. **Security (Non-Negotiable)**
+                - Is all user input rigorously validated, sanitized, and escaped (mitigating XSS, SQLi, etc.)?
+                - Are authentication and authorization checks correctly and consistently applied to all protected resources?
+                - Are secrets, API keys, or credentials hardcoded or potentially leaked (e.g., in logs or error messages)?
 
-            4. **Performance & Scalability**
-                - N+1 queries? Missing indexes? Inefficient loops?
-                - Resource leaks (unclosed files/connections)?
+            4. **Maintainability & Readability**
+                - Is the code easy for a future developer to understand and modify?
+                - Are variable, function, and class names descriptive and unambiguous?
+                - Is the control flow clear? (Analyze complex conditionals and nesting depth).
 
-            ### Output Format
+            5. **Testing Strategy & Robustness**
+                - Is the test coverage sufficient for the complexity and criticality of the change?
+                - Do tests validate failure modes, security edge cases, and error paths, not just the "happy path"?
 
-            Structure your review with markdown headers and bullet points:
-            - `## Review Summary` — 1-2 sentence verdict
-            - `### Critical` / `### Medium` / `### Nit` — findings with `file:line` references and **Fix:** suggestions
-            - `### Checked & Clean` — areas you verified and found no issues
-            - Omit empty sections. Each finding gets its own bullet point.
+            6. **Performance & Scalability**
+                - Backend: Are database queries efficient? N+1 query problems? Appropriate caching?
+                - Frontend: Does the change negatively impact bundle size or Core Web Vitals?
+                - API Design: Is the API contract clear, consistent, and robust in error handling?
 
-            ### Submission
+            ### Output Guidelines
 
-            Submit your review using `gh pr review`:
-            - ANY findings (including Nits) → `--request-changes`
-            - ZERO findings → `--approve`
+            Provide specific, actionable feedback. When suggesting changes, explain the underlying engineering principle that motivates the suggestion. Be constructive and concise.
 
-            Submit exactly ONE review, then STOP.
+            Use the repository's CLAUDE.md for guidance on style and conventions.
 
-          claude_args: '--model claude-sonnet-4-6 --allowed-tools "Bash(gh pr review:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh pr comment:*),Bash(gh pr checks:*)"'
+            **CRITICAL: Use `gh pr review` to submit your review, NOT `gh pr comment`.**
+
+            After completing your analysis:
+            - If you found NO critical issues: Run `gh pr review ${{ github.event.pull_request.number }} --approve --body "Your feedback summary"`
+            - If you found issues requiring changes: Run `gh pr review ${{ github.event.pull_request.number }} --request-changes --body "Your feedback summary"`
+            - If you have non-blocking suggestions only: Run `gh pr review ${{ github.event.pull_request.number }} --comment --body "Your feedback summary"`
+
+            You MUST submit a formal review. Submit exactly ONE review, then STOP.
+
+          claude_args: '--model claude-opus-4-6 --allowed-tools "Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr review:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh pr comment:*),Bash(gh pr checks:*)"'
 
       - name: Deduplicate Claude reviews
         if: always()
