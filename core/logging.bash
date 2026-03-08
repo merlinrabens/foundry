@@ -19,15 +19,33 @@ _tg_bot_token_cache=""
 _tg_resolve_bot_token() {
   [ -n "$_tg_bot_token_cache" ] && { echo "$_tg_bot_token_cache"; return 0; }
   local token="${OPENCLAW_TG_BOT_TOKEN:-}"
+  # Tier 2: openclaw.json env.vars (plaintext, legacy)
   if [ -z "$token" ]; then
     token=$(python3 -c "
 import json
 try:
     cfg = json.loads(open('$HOME/.openclaw/openclaw.json').read())
     v = cfg.get('env',{}).get('vars',{})
-    print(v.get('OPENCLAW_TG_BOT_TOKEN','') or v.get('TELEGRAM_BOT_TOKEN',''))
+    t = v.get('OPENCLAW_TG_BOT_TOKEN','') or v.get('TELEGRAM_BOT_TOKEN','')
+    if isinstance(t, str): print(t)
 except: pass
 " 2>/dev/null)
+  fi
+  # Tier 3: 1Password via service account (SecretRef-compatible)
+  if [ -z "$token" ]; then
+    local op_token="${OP_SERVICE_ACCOUNT_TOKEN:-}"
+    [ -z "$op_token" ] && op_token=$(python3 -c "
+import json
+try:
+    s = json.loads(open('$HOME/.openclaw/secrets.local.json').read())
+    print(s.get('env',{}).get('vars',{}).get('OP_SERVICE_ACCOUNT_TOKEN',''))
+except: pass
+" 2>/dev/null)
+    if [ -n "$op_token" ]; then
+      token=$(OP_SERVICE_ACCOUNT_TOKEN="$op_token" \
+        /usr/local/Caskroom/1password-cli/2.32.0/op read \
+        "op://OpenClaw/Telegram Bot Token/credential" 2>/dev/null)
+    fi
   fi
   if [ -z "$token" ]; then
     return 1
