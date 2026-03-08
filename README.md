@@ -174,6 +174,27 @@ Your stakeholders open the PR, see screenshots, approve or request changes. No d
 
 ---
 
+## Telegram Topics: One Thread Per Agent
+
+Every `foundry spawn --topic` creates a dedicated Telegram forum topic for that task. All status updates — CI results, review verdicts, respawns, merges — go to that thread. Your main chat gets a one-liner ("spawned TASK-123 — tracking in topic") and stays clean.
+
+```bash
+# Spawn with a new topic (auto-created)
+foundry spawn my-org/my-repo specs/backlog/add-auth.md claude --topic
+
+# Reuse an existing topic
+foundry spawn my-org/my-repo specs/backlog/add-auth.md claude --topic-id 4821
+```
+
+Under the hood, `tg_notify_task` checks the SQLite registry for a `tg_topic_id`. If one exists, the message goes to that thread. If not, it falls back to your main chat. Zero config changes needed for existing tasks.
+
+**Requirements:**
+- Telegram supergroup with Topics enabled (group settings → Topics → On)
+- Your bot must be an admin in the group
+- Set `TG_CHAT_ID` to the supergroup ID and `OPENCLAW_TG_BOT_TOKEN` to your bot token
+
+---
+
 ## OpenClaw Integration
 
 <p align="center">
@@ -249,7 +270,7 @@ cd foundry
 cp config.env config.local.env
 # Edit config.local.env — add your repo paths to KNOWN_PROJECTS
 
-# Test (374 tests)
+# Test (347 tests)
 bats tests/
 
 # Add to PATH
@@ -353,7 +374,7 @@ AGENT_TIMEOUT=1800                        # 30 min per agent run
 ```
 foundry status                        Dashboard of all tasks
 foundry scan <repo-path>              Find `foundry`-labeled issues
-foundry spawn <repo> <spec> [agent]   Spawn agent on a spec
+foundry spawn <repo> <spec> [agent] [--topic]   Spawn agent (optionally with TG topic)
 foundry check [task-id]               Monitor agents, trigger reviews
 foundry respawn <task-id>             Retry a failed task
 foundry orchestrate [repo]            Full auto: scan + spawn + check
@@ -453,7 +474,7 @@ foundry (CLI entry point)
 │   ├── claude-code-review.yml
 │   ├── codex-review.yml
 │   └── gemini-check.yml
-└── tests/              # 374 tests (bats)
+└── tests/              # 347 tests (bats)
 ```
 
 ## License

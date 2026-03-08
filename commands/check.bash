@@ -34,7 +34,7 @@ _check_pr_status() {
         echo -e "${YELLOW}Deploy failing (transient): $_PR_DEPLOY_FAIL_NAMES${NC}"
         if [ "$last_notified" != "deploy-failing" ]; then
           registry_update_field "$id" "lastNotifiedState" "deploy-failing"
-          tg_notify "PR $pr_ref: deployment failing ($_PR_DEPLOY_FAIL_NAMES) — transient infra issue, waiting for retry. $_PR_URL" \
+          tg_notify_task "$id" "PR $pr_ref: deployment failing ($_PR_DEPLOY_FAIL_NAMES) — transient infra issue, waiting for retry. $_PR_URL" \
             || registry_update_field "$id" "lastNotifiedState" ""
         fi
         return 5  # Transient deploy failure (don't respawn)
@@ -43,7 +43,7 @@ _check_pr_status() {
         echo -e "${YELLOW}Deploy BUILD failing: $_PR_DEPLOY_FAIL_NAMES${NC}"
         if [ "$last_notified" != "deploy-build-failing" ]; then
           registry_update_field "$id" "lastNotifiedState" "deploy-build-failing"
-          tg_notify "PR $pr_ref: deployment BUILD error ($_PR_DEPLOY_FAIL_NAMES) — needs code fix. $_PR_URL" \
+          tg_notify_task "$id" "PR $pr_ref: deployment BUILD error ($_PR_DEPLOY_FAIL_NAMES) — needs code fix. $_PR_URL" \
             || registry_update_field "$id" "lastNotifiedState" ""
         fi
         _PR_CI_FAIL_NAMES="deploy:${_PR_DEPLOY_FAIL_NAMES}"
@@ -56,7 +56,7 @@ _check_pr_status() {
     echo -e "${YELLOW}CI failing ($_PR_ANY_FAIL check(s): ${fail_detail:-unknown})${NC}"
     if [ "$last_notified" != "ci-failing" ]; then
       registry_update_field "$id" "lastNotifiedState" "ci-failing"
-      tg_notify "PR $pr_ref: CI failing [${fail_detail:-checks}] [$_PR_CHECKS_SUMMARY] - $_PR_URL" \
+      tg_notify_task "$id" "PR $pr_ref: CI failing [${fail_detail:-checks}] [$_PR_CHECKS_SUMMARY] - $_PR_URL" \
         || registry_update_field "$id" "lastNotifiedState" ""
     fi
     return 1  # CI failing
@@ -69,7 +69,7 @@ _check_pr_status() {
       echo -e "${BLUE}Changes requested, waiting for remaining reviews [$_PR_CHECKS_SUMMARY]${NC}"
       if [ "$last_notified" != "awaiting-all-reviews" ]; then
         registry_update_field "$id" "lastNotifiedState" "awaiting-all-reviews"
-        tg_notify "PR $pr_ref: changes requested, waiting for all reviewers [$_PR_CHECKS_SUMMARY] - $_PR_URL" \
+        tg_notify_task "$id" "PR $pr_ref: changes requested, waiting for all reviewers [$_PR_CHECKS_SUMMARY] - $_PR_URL" \
           || registry_update_field "$id" "lastNotifiedState" ""
       fi
       return 4  # Wait for all reviews before fixing
@@ -77,7 +77,7 @@ _check_pr_status() {
     echo -e "${YELLOW}CI passed, all reviews in, changes requested${NC}"
     if [ "$last_notified" != "changes-requested" ]; then
       registry_update_field "$id" "lastNotifiedState" "changes-requested"
-      tg_notify "PR $pr_ref: all reviews in, changes requested [$_PR_CHECKS_SUMMARY] - $_PR_URL" \
+      tg_notify_task "$id" "PR $pr_ref: all reviews in, changes requested [$_PR_CHECKS_SUMMARY] - $_PR_URL" \
         || registry_update_field "$id" "lastNotifiedState" ""
     fi
     return 3  # Changes requested (all reviews collected)
@@ -98,7 +98,7 @@ _check_pr_status() {
         echo -e "${BLUE}Gemini has findings, waiting for remaining reviews [$_PR_CHECKS_SUMMARY]${NC}"
         if [ "$last_notified" != "awaiting-all-reviews" ]; then
           registry_update_field "$id" "lastNotifiedState" "awaiting-all-reviews"
-          tg_notify "PR $pr_ref: Gemini findings, waiting for all reviewers [$_PR_CHECKS_SUMMARY] - $_PR_URL" \
+          tg_notify_task "$id" "PR $pr_ref: Gemini findings, waiting for all reviewers [$_PR_CHECKS_SUMMARY] - $_PR_URL" \
             || registry_update_field "$id" "lastNotifiedState" ""
         fi
         return 4  # Wait for all reviews before fixing
@@ -106,7 +106,7 @@ _check_pr_status() {
       echo -e "${YELLOW}Gemini findings need fixing (all reviews in) [$_PR_CHECKS_SUMMARY]${NC}"
       if [ "$last_notified" != "gemini-findings" ]; then
         registry_update_field "$id" "lastNotifiedState" "gemini-findings"
-        tg_notify "PR $pr_ref: all reviews in, Gemini findings to fix [$_PR_CHECKS_SUMMARY] - $_PR_URL" \
+        tg_notify_task "$id" "PR $pr_ref: all reviews in, Gemini findings to fix [$_PR_CHECKS_SUMMARY] - $_PR_URL" \
           || registry_update_field "$id" "lastNotifiedState" ""
       fi
       return 6  # Gemini findings need fix
@@ -124,7 +124,7 @@ _check_pr_status() {
       --add-label "ready-for-evidence" 2>/dev/null) || true
     if [ "$last_notified" != "ready" ]; then
       registry_update_field "$id" "lastNotifiedState" "ready"
-      tg_notify "PR $pr_ref ready to merge [$_PR_CHECKS_SUMMARY] - $_PR_URL" \
+      tg_notify_task "$id" "PR $pr_ref ready to merge [$_PR_CHECKS_SUMMARY] - $_PR_URL" \
         || registry_update_field "$id" "lastNotifiedState" ""
     fi
     return 0  # Ready
@@ -132,7 +132,7 @@ _check_pr_status() {
     echo -e "${BLUE}CI passed, awaiting reviews${NC}"
     if [ "$last_notified" != "awaiting-reviews" ]; then
       registry_update_field "$id" "lastNotifiedState" "awaiting-reviews"
-      tg_notify "PR $pr_ref: CI passed, awaiting reviews [$_PR_CHECKS_SUMMARY] - $_PR_URL" \
+      tg_notify_task "$id" "PR $pr_ref: CI passed, awaiting reviews [$_PR_CHECKS_SUMMARY] - $_PR_URL" \
         || registry_update_field "$id" "lastNotifiedState" ""
     fi
     return 4  # Awaiting reviews

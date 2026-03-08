@@ -158,7 +158,7 @@ _try_respawn_or_exhaust() {
 
   if [ "$attempts" -lt "$max_attempts" ]; then
     log_warn "  Auto-respawning (attempt $((attempts + 1))/$max_attempts)..."
-    tg_notify "${reason_msg} on \`$task_id\`, respawning (attempt $((attempts + 1))/$max_attempts)"
+    tg_notify_task "$task_id" "${reason_msg} on \`$task_id\`, respawning (attempt $((attempts + 1))/$max_attempts)"
     if cmd_respawn "$task_id"; then
       return 0
     else
@@ -182,7 +182,7 @@ _try_respawn_or_exhaust() {
     local now_ts; now_ts=$(date +%s)
     local duration=$(( now_ts - started ))
     pattern_log "$task_id" "$agent" "$model" "$retries" "false" "$duration" "$project" "feature"
-    tg_notify "Agent exhausted after $max_attempts attempts: \`$task_id\`. Needs human.${pr_url:+
+    tg_notify_task "$task_id" "Agent exhausted after $max_attempts attempts: \`$task_id\`. Needs human.${pr_url:+
 [View PR](${pr_url})}"
     return 1
   fi
@@ -208,7 +208,7 @@ _try_review_fix() {
     local next_fix=$((review_fixes + 1))
     registry_update_field "$task_id" "reviewFixAttempts" "$next_fix"
     log_warn "  Review-fix cycle ($next_fix/$max_review_fixes)..."
-    tg_notify "${reason_msg} on \`$task_id\`, auto-fixing (review cycle $next_fix/$max_review_fixes)"
+    tg_notify_task "$task_id" "${reason_msg} on \`$task_id\`, auto-fixing (review cycle $next_fix/$max_review_fixes)"
     if cmd_respawn --force "$task_id"; then
       return 0
     else
@@ -220,7 +220,7 @@ _try_review_fix() {
     local now_ts; now_ts=$(date +%s)
     local duration=$(( now_ts - started ))
     pattern_log "$task_id" "$agent" "$model" "$retries" "false" "$duration" "$project" "feature"
-    tg_notify "Review-fix exhausted after $max_review_fixes cycles: \`$task_id\`. Needs human.${pr_url:+
+    tg_notify_task "$task_id" "Review-fix exhausted after $max_review_fixes cycles: \`$task_id\`. Needs human.${pr_url:+
 [View PR](${pr_url})}"
     return 1
   fi
@@ -253,7 +253,7 @@ _try_auto_merge() {
     log "Auto-merging LOW risk PR: $pr_url"
     if cd "$check_dir" 2>/dev/null && gh pr merge --squash 2>/dev/null; then
       registry_batch_update "$task_id" "status=merged" "completedAt=$(date +%s)"
-      tg_notify "Auto-merged LOW risk PR [$risk_tier]: $pr_url"
+      tg_notify_task "$task_id" "Auto-merged LOW risk PR [$risk_tier]: $pr_url"
       return 0
     else
       log_warn "Auto-merge failed for $task_id (branch protection?)"

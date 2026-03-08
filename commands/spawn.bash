@@ -5,6 +5,8 @@ cmd_spawn() {
   # Parse flags
   local prompt_file_override=""
   local issue_number=""
+  local create_topic=""
+  local topic_id_override=""
   local positional=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -24,6 +26,18 @@ cmd_spawn() {
         issue_number="${1#*=}"
         shift
         ;;
+      --topic)
+        create_topic="1"
+        shift
+        ;;
+      --topic-id)
+        topic_id_override="$2"
+        shift 2
+        ;;
+      --topic-id=*)
+        topic_id_override="${1#*=}"
+        shift
+        ;;
       *)
         positional+=("$1")
         shift
@@ -35,10 +49,12 @@ cmd_spawn() {
   local repo_dir="$1" spec_or_task="$2" model="${3:-$DEFAULT_MODEL}"
 
   if [ -z "$repo_dir" ] || [ -z "$spec_or_task" ]; then
-    echo "Usage: foundry spawn <repo-path> <spec-file | task-description> [model] [--prompt-file <file>]"
+    echo "Usage: foundry spawn <repo-path> <spec-file | task-description> [model] [--prompt-file <file>] [--topic] [--topic-id <id>]"
     echo ""
     echo "Options:"
     echo "  --prompt-file <file>  Use custom prompt instead of template (for orchestrator-driven spawns)"
+    echo "  --topic               Create a Telegram forum topic for this task (streams all updates there)"
+    echo "  --topic-id <id>       Use an existing Telegram topic ID instead of creating a new one"
     echo ""
     echo "Examples:"
     echo "  foundry spawn ~/projects/aura-shopify specs/backlog/05-dashboard.md"
@@ -50,6 +66,7 @@ cmd_spawn() {
     echo "  foundry spawn ~/projects/aura-shopify specs/backlog/04-admin.md openclaw          # Jerry picks best agent"
     echo "  foundry spawn ~/projects/aura-shopify specs/backlog/04-admin.md openclaw:codex   # Jerry hint: use codex"
     echo "  foundry spawn ~/projects/aura-shopify specs/backlog/04-admin.md codex --prompt-file /tmp/my-prompt.md"
+    echo "  foundry spawn ~/projects/aura-shopify specs/backlog/05-dashboard.md --topic       # with TG topic"
     return 1
   fi
 
@@ -336,6 +353,29 @@ fixes #${issue_number}
     _registry_unlock
   fi
 
+  # ── Telegram topic creation ──
+  local tg_topic_id=""
+  if [ -n "$topic_id_override" ]; then
+    tg_topic_id="$topic_id_override"
+  elif [ -n "$create_topic" ]; then
+    local topic_name="${project_name}/${task_name}"
+    tg_topic_id=$(tg_create_topic "$topic_name" 2>/dev/null || echo "")
+    if [ -n "$tg_topic_id" ]; then
+      log "Created Telegram topic: $tg_topic_id"
+    else
+      log_warn "Failed to create Telegram topic (continuing without)"
+    fi
+  fi
+  if [ -n "$tg_topic_id" ]; then
+    registry_update_field "$task_id" "tgTopicId" "$tg_topic_id"
+    tg_notify_topic "$tg_topic_id" "Agent spawned: $task_id
+Backend: $agent_backend | Model: $model
+Branch: $branch_name
+Repo: $project_name"
+    # Brief notice in main chat
+    tg_notify "Spawned \`$task_id\` ($agent_backend) — tracking in topic"
+  fi
+
   echo ""
   log_ok "Agent spawned: ${BOLD}${task_id}${NC}"
   log "  Backend:   $agent_backend"
@@ -343,6 +383,7 @@ fixes #${issue_number}
   log "  Branch:    $branch_name"
   log "  Model:     $model"
   log "  PID:       $agent_pid"
+  [ -n "$tg_topic_id" ] && log "  TG Topic:  $tg_topic_id"
   log "  Log:       tail -f $log_file"
   echo ""
 }
