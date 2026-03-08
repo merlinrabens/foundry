@@ -476,13 +476,14 @@ Every PR gets three AI reviews.
 
 ```bash
 # ─── Orchestration (Jerry) ────────────────────────────────────────────
-foundry orchestrate <repo> <spec|task> [hint]     # Jerry picks best agent + spawns (JSON output)
+foundry orchestrate <repo> <spec|task> [hint] --topic  # Jerry picks best agent + spawns (JSON output)
 foundry peek <id>                                 # Structured JSON status (registry + live status)
 foundry steer-wait <id> <msg>                     # Steer + poll for response (30s timeout)
 
 # ─── Core ──────────────────────────────────────────────────────────────
-foundry spawn <repo> <spec|task> [model]          # Launch agent in isolated worktree
-foundry spawn <repo> <spec> codex --prompt-file /tmp/prompt.md  # Custom prompt
+foundry spawn <repo> <spec|task> [model] --topic  # Launch agent in isolated worktree + TG topic
+foundry spawn <repo> <spec> codex --topic-id 42   # Use existing Telegram topic
+foundry spawn <repo> <spec> codex --prompt-file /tmp/prompt.md --topic  # Custom prompt
 foundry check                                     # Run zero-token monitoring cycle
 foundry status                                    # Overview of all active tasks
 
