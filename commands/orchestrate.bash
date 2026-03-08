@@ -75,6 +75,26 @@ cmd_orchestrate() {
     task_content="$spec_or_task"
   fi
 
+  # ── Planning Stage: enrich spec with repo reconnaissance ─────────────
+  # If spec is a file, enrich in-place. If it's a text description, create
+  # a temp spec file with the description + recon hints.
+  source "${FOUNDRY_DIR}/lib/preflight_recon.bash" 2>/dev/null || true
+  if type enrich_spec_with_recon &>/dev/null; then
+    if [ -f "$spec_or_task" ]; then
+      enrich_spec_with_recon "$repo_dir" "$spec_or_task"
+    else
+      # Text description — create enriched temp spec
+      local recon_spec_file
+      recon_spec_file=$(mktemp "/tmp/foundry-recon-XXXXX.md")
+      printf '# %s\n\n%s\n' "$(echo "$task_content" | head -1)" "$task_content" > "$recon_spec_file"
+      enrich_spec_with_recon "$repo_dir" "$recon_spec_file"
+      spec_or_task="$recon_spec_file"
+      task_content=$(cat "$recon_spec_file")
+      # Mark for cleanup
+      [ -z "$issue_spec_file" ] && issue_spec_file="$recon_spec_file"
+    fi
+  fi
+
   # Jerry selects the agent
   _jerry_select_agent "$repo_dir" "$task_content" "$hint"
   local selected_backend="$JERRY_BACKEND"
