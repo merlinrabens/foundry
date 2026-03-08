@@ -560,7 +560,7 @@ Six workflow templates deployable to any repo via `deploy-ci.sh`.
 | `visual-evidence.yml` | Playwright video screencasts + FFmpeg | PR opened, synchronize |
 | **`foundry-gate.yml`** | **Event-driven bridge → local `foundry check`** | **workflow_run completed, review submitted, PR closed/labeled** |
 
-**Required secrets:** `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`
+**Required secrets:** `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`), `OPENAI_API_KEY`
 **Required app:** Gemini Code Assist (free, GitHub Marketplace)
 
 ### Foundry Gate (Event-Driven Check)
@@ -580,6 +580,44 @@ GitHub Event (CI done / review submitted / PR closed)
 **Setup:** `bash scripts/setup-runner.sh <github-org>` — installs runner as LaunchAgent (auto-start on boot).
 
 The check-loop cron (*/30 min) remains as a **fallback** for edge cases the Gate doesn't catch (e.g., agent timeout, PID death, orphaned tasks).
+
+---
+
+## Authentication
+
+Foundry agents authenticate differently per backend:
+
+| Backend | Auth Method | Token Location |
+|---------|------------|----------------|
+| **Codex** | API key (`OPENAI_API_KEY`) | Environment variable — never expires |
+| **Claude** | OAuth setup-token | `~/.claude/.foundry-setup-token` — ~1 year validity |
+| **Gemini** | API key (`GEMINI_API_KEY`) | Environment variable — never expires |
+
+### Claude Agent Auth (Setup Token)
+
+Claude backend agents run headlessly and cannot refresh OAuth tokens interactively. The solution is a **long-lived setup-token** generated once via `claude setup-token` (~1 year validity).
+
+**One-time setup:**
+
+```bash
+claude setup-token
+# Copy the output token, then:
+echo -n "<TOKEN>" > ~/.claude/.foundry-setup-token
+chmod 600 ~/.claude/.foundry-setup-token
+```
+
+**Token resolution priority** (in `runner_script.bash`):
+
+1. `~/.claude/.foundry-setup-token` — long-lived setup-token (preferred)
+2. `~/.claude/.credentials.json` — short-lived OAuth token (8-12h, skipped if expired)
+3. `~/.claude/.foundry-token` — cache written by active CLI sessions
+4. macOS Keychain — last resort
+
+If all sources are exhausted, the agent fails loudly with a clear error message.
+
+**CI reviews** use the same setup-token stored as `CLAUDE_CODE_OAUTH_TOKEN` GitHub secret. The `claude-code-action` handles refresh internally.
+
+**Renewal:** Run `claude setup-token` again when the token approaches its ~1 year expiry.
 
 ---
 
