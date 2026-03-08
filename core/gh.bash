@@ -3,13 +3,12 @@
 _CORE_GH_LOADED=1
 
 # Extract "owner/repo" slug from a local git repo's origin remote.
-# Handles both HTTPS (https://github.com/owner/repo.git)
-# and SSH (git@github.com:owner/repo.git) remotes.
+# Handles HTTPS, SSH (git@github.com:), and SSH aliases (github-*:).
 _get_gh_repo_slug() {
   local proj="$1"
   local remote
   remote=$(git -C "$proj" remote get-url origin 2>/dev/null) || return 1
-  echo "$remote" | sed 's|\.git$||' | sed 's|.*github\.com[:/]||'
+  echo "$remote" | sed 's|\.git$||' | sed 's|.*github[^:]*:||' | sed 's|.*github\.com/||'
 }
 
 # Return 0 (true) when a repo has opted in to GitHub Issues as a spec source.
