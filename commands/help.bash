@@ -5,6 +5,7 @@ cmd_help() {
 Foundry — Multi-Agent Code Factory
 
 COMMANDS
+  setup                             Interactive config wizard (repos, agents, CI)
   spawn <repo> <spec|task> [model]  Launch agent in isolated worktree
   check [task-id]                   Monitor all agents (or one specific task)
   status                            Show task overview with check status

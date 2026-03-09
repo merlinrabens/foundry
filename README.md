@@ -276,116 +276,62 @@ Your stakeholders see a board. They don't know about Foundry. They see "Done."
 ## Quick Start
 
 ```bash
-# Clone
-git clone https://github.com/merlinrabens/foundry.git
-cd foundry
+# Install (or update)
+curl -fsSL https://raw.githubusercontent.com/merlinrabens/foundry/main/install.sh | bash
 
-# Configure
-cp config.env config.local.env
-# Edit config.local.env — add your repo paths to KNOWN_PROJECTS
+# Configure repos, agents, notifications
+foundry setup
 
-# Test (347 tests)
-bats tests/
-
-# Add to PATH
-echo 'export PATH="$HOME/foundry:$PATH"' >> ~/.zshrc
-
-# Try it
+# Go
 foundry status                     # Dashboard
 foundry scan ~/projects/my-repo    # Find labeled issues
 foundry orchestrate                # Full auto: scan → spawn → check
 ```
 
+That's it. The installer handles cloning, PATH, prerequisites, and database setup. The setup wizard walks you through everything else.
+
 ## Requirements
 
 - macOS or Linux
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) — primary agent
-- [Codex CLI](https://github.com/openai/codex) — optional, backend agent
-- [Gemini CLI](https://github.com/google-gemini/gemini-cli) — optional, design agent
-- [GitHub CLI](https://cli.github.com/) (`gh`) — authenticated
-- SQLite3
-- [bats-core](https://github.com/bats-core/bats-core) — for tests
+- [GitHub CLI](https://cli.github.com/) (`gh`) — authenticated (`gh auth login`)
+- At least one AI agent:
+  - [Claude Code](https://docs.anthropic.com/en/docs/claude-code): `npm i -g @anthropic-ai/claude-code`
+  - [Codex](https://github.com/openai/codex): `npm i -g @openai/codex` + `OPENAI_API_KEY`
+  - [Gemini](https://github.com/google-gemini/gemini-cli): `npm i -g @google/gemini-cli` + `GOOGLE_API_KEY`
+- SQLite3, jq (installer checks for these)
 
 ## Setup Guide
 
-### 1. Local Environment
+`foundry setup` handles everything interactively:
 
-```bash
-# Required: Claude Code OAuth token (from macOS Keychain or manual)
-security add-generic-password -s "claude-code-oauth" -a "claude" -w "YOUR_TOKEN"
+1. **Repos** — which repos Foundry should manage
+2. **AGENTS.md** — generates config file in repos that need one
+3. **Agents** — detects installed CLIs, checks API keys
+4. **Telegram** — optional notifications (bot token + chat ID)
+5. **CI workflows** — deploys review workflows to your repos
+6. **Database** — creates the SQLite registry
 
-# Required: GitHub CLI authenticated
-gh auth login
+### GitHub Repository Secrets
 
-# Optional: Codex
-export OPENAI_API_KEY="sk-..."
-
-# Optional: Gemini
-export GOOGLE_API_KEY="AIza..."
-
-# Optional: Telegram notifications
-export TG_CHAT_ID="your-chat-id"
-export OPENCLAW_TG_BOT_TOKEN="your-bot-token"
-```
-
-### 2. GitHub Repository Secrets
-
-Each repo that uses Foundry needs these secrets (Settings → Secrets → Actions):
+Each repo that uses Foundry's CI review workflows needs these secrets (Settings > Secrets > Actions):
 
 | Secret | Required | Used By |
 |---|---|---|
-| `CLAUDE_CODE_OAUTH_TOKEN` | ✅ | Claude Code Review workflow |
-| `OPENAI_API_KEY` | If using Codex | Codex Review workflow |
-| `TELEGRAM_BOT_TOKEN` | Optional | Notifications on review/merge |
-| `TELEGRAM_CHAT_ID` | Optional | Notifications target |
+| `CLAUDE_CODE_OAUTH_TOKEN` | Yes | Claude Code Review |
+| `OPENAI_API_KEY` | If using Codex | Codex Review |
+| `TELEGRAM_BOT_TOKEN` | Optional | Notifications |
+| `TELEGRAM_CHAT_ID` | Optional | Notifications |
 
-### 3. CI Templates
-
-Deploy the review workflows to your repo:
+### Uninstall
 
 ```bash
-# Copy CI templates to your repo
-bash ci-templates/deploy-ci.sh your-org/your-repo
-
-# This installs:
-# - .github/workflows/claude-code-review.yml    (adversarial Claude reviewer)
-# - .github/workflows/codex-review.yml          (architecture/API reviewer)
-# - .github/workflows/foundry-gate.yml          (event-driven check trigger)
-# - .github/workflows/visual-evidence.yml       (screenshot capture for UI PRs)
-```
-
-### 4. Self-Hosted Runner (Optional but Recommended)
-
-```bash
-# Install runner on your machine for event-driven checks
-bash scripts/setup-runner.sh your-org/your-repo
-```
-
-### 5. Config
-
-```bash
-cp config.env config.local.env
-# Edit config.local.env:
-```
-
-Key settings in `config.env`:
-
-```bash
-CLAUDE_BIN="$HOME/.local/bin/claude"     # Path to Claude Code CLI
-CODEX_BIN="codex"                         # Path to Codex CLI
-GEMINI_BIN="gemini"                       # Path to Gemini CLI
-CLAUDE_DEFAULT="claude-sonnet-4-6"        # Default Claude model
-CODEX_MODEL="gpt-5.3-codex"              # Codex model
-GEMINI_MODEL="gemini-3.5-pro"            # Gemini model
-MAX_RETRIES=5                             # Spawn attempts per task
-MAX_REVIEW_FIXES=20                       # Review-fix cycles per attempt
-MAX_CONCURRENT=4                          # Parallel agents
-AGENT_TIMEOUT=1800                        # 30 min per agent run
+curl -fsSL https://raw.githubusercontent.com/merlinrabens/foundry/main/install.sh | bash -s -- --uninstall
 ```
 
 ## Commands
 
 ```
+foundry setup                         Interactive config wizard
 foundry status                        Dashboard of all tasks
 foundry scan <repo-path>              Find `foundry`-labeled issues
 foundry spawn <repo> <spec> [agent] [--topic]   Spawn agent (optionally with TG topic)
