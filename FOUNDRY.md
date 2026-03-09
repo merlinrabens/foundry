@@ -41,8 +41,7 @@ Three-backend coding agent system with Jerry as orchestrator. Spawns isolated ag
 │                                                                     │
 │  ┌─── Event-Driven + Fallback Monitoring ─────────────────────────┐ │
 │  │  foundry-gate.yml → self-hosted runner → foundry check (instant│ │
-│  │  check-loop (*/30 min) → fallback PID + PR + CI + reviews      │ │
-│  │  orchestrator (*/3 hrs) → diagnose failures, respawn           │ │
+│  │  orchestrator (*/2h) → safety net check + diagnose + respawn   │ │
 │  │  night-build (1am) → spawn from specs/backlog/                 │ │
 │  │  daily-cleanup (3am) → archive, prune worktrees                │ │
 │  └────────────────────────────────────────────────────────────────┘ │
@@ -598,7 +597,7 @@ Six workflow templates deployable to any repo via `deploy-ci.sh`.
 
 ### Foundry Gate (Event-Driven Check)
 
-The `foundry-gate.yml` workflow runs on a **self-hosted runner** (label: `foundry`) on the Mac mini. When any CI workflow completes, a review is submitted, or a PR is closed — the Gate triggers `foundry check <task-id>` **locally within seconds**. No polling delay.
+The `foundry-gate.yml` workflow runs on a **self-hosted runner** (label: `foundry`) on the MacBook Pro. When any CI workflow completes, a review is submitted, or a PR is closed — the Gate triggers `foundry check <task-id>` **locally within seconds**. No polling delay. Sends beautiful HTML-formatted Telegram notifications with per-check pass/fail status (replaces `pr-review-notify.yml` and the old `foundry-nudge` messages).
 
 ```
 GitHub Event (CI done / review submitted / PR closed)
@@ -612,7 +611,7 @@ GitHub Event (CI done / review submitted / PR closed)
 
 **Setup:** `bash scripts/setup-runner.sh <github-org>` — installs runner as LaunchAgent (auto-start on boot).
 
-The check-loop cron (*/30 min) remains as a **fallback** for edge cases the Gate doesn't catch (e.g., agent timeout, PID death, orphaned tasks).
+The orchestrator cron (*/2h) runs `foundry check` as a **safety net** for edge cases the Gate doesn't catch (e.g., agent timeout, PID death, runner downtime). The separate check-loop cron was removed — polling is no longer needed with the event-driven Gate.
 
 ---
 
@@ -673,13 +672,12 @@ Primary monitoring is **event-driven** via Foundry Gate (self-hosted runner). Cr
 
 | Job | Schedule | Model | Timeout | Purpose |
 |-----|----------|-------|---------|---------|
-| **Foundry Gate** | Event-driven | — | 5 min | CI done / review submitted → immediate `foundry check` |
-| `foundry-check-loop` | Every 30 min | Haiku | 120s | Fallback monitor + auto-respawn |
+| **Foundry Gate** | Event-driven | — | 5 min | CI done / review submitted → immediate `foundry check` + HTML notification |
+| `foundry-orchestrator` | Every 2 hours | Sonnet 4.6 | 300s | Safety net `foundry check` + diagnose failures + respawn |
 | `foundry-daily-cleanup` | 3:45 AM daily | Haiku | 120s | Archive + prune worktrees |
-| `foundry-orchestrator` | Every 3 hours | Sonnet 4.6 | 300s | Proactive spawn from backlogs |
 | `foundry-night-build` | 1:30 AM daily | Sonnet 4.6 | 300s | Auto-spawn from spec backlogs |
 
-The Gate handles real-time reactions (review → respawn in seconds). The check-loop catches edge cases (timeout, PID death, orphans). Check-loop and cleanup use Haiku (simple tasks). Orchestrator uses Sonnet (needs judgment).
+The Gate handles real-time reactions (review → respawn in seconds). The orchestrator (every 2h) catches edge cases the Gate misses (timeout, PID death, runner downtime). No separate polling cron needed.
 
 ---
 

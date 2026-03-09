@@ -187,14 +187,3 @@ jobs:
 
             core.info(`Gemini check: ${conclusion} (${summary})`);
 
-      - name: Nudge Foundry via Telegram
-        if: always()
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          [ -z "$TELEGRAM_BOT_TOKEN" ] && exit 0
-          curl -sf "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -d chat_id="${TELEGRAM_CHAT_ID}" \
-            -d text="foundry-nudge: ${{ github.repository }} PR#${{ github.event.pull_request.number }} reviewer=gemini status=${{ job.status }}" \
-            >/dev/null 2>&1 || true

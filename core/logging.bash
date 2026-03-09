@@ -56,6 +56,7 @@ except: pass
 
 tg_notify() {
   local message="$1"
+  local parse_mode="${2:-}"  # Optional: "HTML" or "MarkdownV2"
   local bot_token
   bot_token=$(_tg_resolve_bot_token) || {
     log_warn "No Telegram bot token (set OPENCLAW_TG_BOT_TOKEN or check openclaw.json)"
@@ -63,10 +64,14 @@ tg_notify() {
   }
 
   # Use --data-urlencode to properly handle newlines and special chars
+  local parse_mode_arg=()
+  [ -n "$parse_mode" ] && parse_mode_arg=(--data-urlencode "parse_mode=$parse_mode")
   local response
   response=$(curl -s -X POST "https://api.telegram.org/bot${bot_token}/sendMessage" \
     --data-urlencode "chat_id=$TG_CHAT_ID" \
-    --data-urlencode "text=$message" 2>&1)
+    --data-urlencode "text=$message" \
+    --data-urlencode "disable_web_page_preview=true" \
+    "${parse_mode_arg[@]}" 2>&1)
   if echo "$response" | grep -q '"ok":true'; then
     return 0
   else
@@ -111,17 +116,22 @@ tg_create_topic() {
 tg_notify_topic() {
   local topic_id="$1"
   local message="$2"
+  local parse_mode="${3:-}"  # Optional: "HTML" or "MarkdownV2"
   local bot_token
   bot_token=$(_tg_resolve_bot_token) || {
     log_warn "Cannot send to topic: no Telegram bot token"
     return 0
   }
 
+  local parse_mode_arg=()
+  [ -n "$parse_mode" ] && parse_mode_arg=(--data-urlencode "parse_mode=$parse_mode")
   local response
   response=$(curl -s -X POST "https://api.telegram.org/bot${bot_token}/sendMessage" \
     --data-urlencode "chat_id=$TG_CHAT_ID" \
     --data-urlencode "message_thread_id=$topic_id" \
-    --data-urlencode "text=$message" 2>&1)
+    --data-urlencode "text=$message" \
+    --data-urlencode "disable_web_page_preview=true" \
+    "${parse_mode_arg[@]}" 2>&1)
   if echo "$response" | grep -q '"ok":true'; then
     return 0
   else
@@ -130,12 +140,13 @@ tg_notify_topic() {
   fi
 }
 
-# tg_notify_task <task_id> <message>
+# tg_notify_task <task_id> <message> [parse_mode]
 # Smart router: sends to topic if task has a tg_topic_id, otherwise falls back to tg_notify.
-# Also sends a brief summary to main chat when using topic (keeps Jerry informed).
+# parse_mode: optional "HTML" or "MarkdownV2" for formatted messages.
 tg_notify_task() {
   local task_id="$1"
   local message="$2"
+  local parse_mode="${3:-}"
 
   # Look up topic_id from registry
   local topic_id=""
@@ -144,10 +155,8 @@ tg_notify_task() {
   fi
 
   if [ -n "$topic_id" ] && [ "$topic_id" != "null" ] && [ "$topic_id" != "" ]; then
-    # Send full update to the task's topic
-    tg_notify_topic "$topic_id" "$message"
+    tg_notify_topic "$topic_id" "$message" "$parse_mode"
   else
-    # No topic — fall back to main chat
-    tg_notify "$message"
+    tg_notify "$message" "$parse_mode"
   fi
 }
