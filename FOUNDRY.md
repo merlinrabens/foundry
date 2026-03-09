@@ -416,6 +416,38 @@ Auto-merge requirements (all must be true):
 
 ---
 
+## Linear Integration (Optional)
+
+When enabled, Foundry automatically injects Linear issue identifiers into PR descriptions so stakeholders can track progress on a Linear board without any manual work.
+
+**How it works:**
+- Foundry maps GitHub repos to Linear team prefixes (e.g. `Huklberry/lead-gen` -> `HUK`)
+- For issue-based tasks, the PR title gets the Linear ID and the body gets both closing keywords:
+  ```
+  Title: HUK-5: issue-5
+  Body:
+  fixes HUK-5    <- Linear: links PR
+  fixes #5       <- GitHub: auto-closes the issue on merge
+  ```
+- Linear recognizes the ID in the PR title and automatically tracks status:
+  - PR opened -> In Progress
+  - PR merged -> Done
+- Foundry never calls the Linear API. It's a static prefix lookup, nothing more.
+
+**Setup:**
+```bash
+# config.env
+LINEAR_INTEGRATION=true
+LINEAR_PREFIX_MAP='{
+  "Huklberry/lead-gen": "HUK",
+  "primal-meat-club/aura-shopify": "PRI"
+}'
+```
+
+Repos not in the map are unaffected. When disabled (default), Foundry behaves exactly as before.
+
+---
+
 ## Visual Evidence
 
 Frontend PRs get video screencasts embedded directly in the PR comment. Inspired by Ryan Carson's "Harness Engineering" pattern.
@@ -476,14 +508,13 @@ Every PR gets three AI reviews.
 
 ```bash
 # ─── Orchestration (Jerry) ────────────────────────────────────────────
-foundry orchestrate <repo> <spec|task> [hint] --topic  # Jerry picks best agent + spawns (JSON output)
+foundry orchestrate <repo> <spec|task> [hint]     # Jerry picks best agent + spawns (JSON output)
 foundry peek <id>                                 # Structured JSON status (registry + live status)
 foundry steer-wait <id> <msg>                     # Steer + poll for response (30s timeout)
 
 # ─── Core ──────────────────────────────────────────────────────────────
-foundry spawn <repo> <spec|task> [model] --topic  # Launch agent in isolated worktree + TG topic
-foundry spawn <repo> <spec> codex --topic-id 42   # Use existing Telegram topic
-foundry spawn <repo> <spec> codex --prompt-file /tmp/prompt.md --topic  # Custom prompt
+foundry spawn <repo> <spec|task> [model]          # Launch agent in isolated worktree
+foundry spawn <repo> <spec> codex --prompt-file /tmp/prompt.md  # Custom prompt
 foundry check                                     # Run zero-token monitoring cycle
 foundry status                                    # Overview of all active tasks
 
@@ -620,11 +651,17 @@ chmod 600 ~/.claude/.foundry-setup-token
 
 **CI reviews** use the same setup-token stored as `CLAUDE_CODE_OAUTH_TOKEN` GitHub secret. The `claude-code-action` handles refresh internally.
 
+### GitHub CLI Auth (gh)
+
+Agents use `gh`'s native keyring auth for GitHub API calls (reading reviews, PR status, etc.).
+
+**CRITICAL — Do NOT bake `GH_TOKEN` or `GITHUB_TOKEN` into runner scripts.** These are short-lived GitHub Actions installation tokens (`ghs_` prefix) that expire within hours. If baked at spawn time, they override keyring auth when the agent runs later, causing `HTTP 401: Bad credentials` for all `gh` CLI calls. The `spawn.bash` and `respawn.bash` env blocks intentionally skip these vars.
+
 **Renewal:** Run `claude setup-token` again when the token approaches its ~1 year expiry.
 
 ### Codex Sandbox Permissions
 
-Codex CLI runs a macOS Seatbelt sandbox by default which blocks writes to `/tmp`, `__pycache__`, and temp directories. The `sandbox_permissions` config key is ignored by macOS Seatbelt (GitHub #10390). Foundry passes `sandbox_mode="danger-full-access"` via `acp_orchestrator.py` which fully disables the Seatbelt sandbox. This is safe because each agent runs in an isolated git worktree. The setting is also backed by `~/.codex/config.toml` (`sandbox_mode = "danger-full-access"`).
+Codex CLI runs a macOS Seatbelt sandbox by default which blocks writes to `/tmp`, `__pycache__`, and temp directories. Foundry passes `sandbox_mode="danger-full-access"` via `acp_orchestrator.py` so agents can run tests and write files in worktrees. This is safe because each agent runs in an isolated git worktree.
 
 ---
 
@@ -667,38 +704,6 @@ All tunables in `config.env`:
 | `IDLE_THRESHOLD_SECS` | `1800` | Flag agents idle >30min with zero changes |
 | `LINEAR_INTEGRATION` | `false` | Enable Linear identifier injection in PRs |
 | `LINEAR_PREFIX_MAP` | `{}` | JSON map of `"owner/repo"` to Linear team prefix |
-
----
-
-## Linear Integration (Optional)
-
-When enabled, Foundry automatically injects Linear issue identifiers into PR descriptions so stakeholders can track progress on a Linear board without any manual work.
-
-**How it works:**
-- Foundry maps GitHub repos to Linear team prefixes (e.g. `myorg/my-repo` -> `ENG`)
-- For issue-based tasks, the PR title gets the Linear ID and the body gets both closing keywords:
-  ```
-  Title: ENG-5: issue-5
-  Body:
-  fixes ENG-5    <- Linear: links PR
-  fixes #5       <- GitHub: auto-closes the issue on merge
-  ```
-- Linear recognizes the ID in the PR title and automatically tracks status:
-  - PR opened -> In Progress
-  - PR merged -> Done
-- Foundry never calls the Linear API. It's a static prefix lookup, nothing more.
-
-**Setup:**
-```bash
-# config.env
-LINEAR_INTEGRATION=true
-LINEAR_PREFIX_MAP='{
-  "myorg/my-repo": "ENG",
-  "myorg/design-system": "DES"
-}'
-```
-
-Repos not in the map are unaffected. When disabled (default), Foundry behaves exactly as before.
 
 ---
 
