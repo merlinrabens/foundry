@@ -42,7 +42,11 @@ def get_adapter_args(backend: str, model: str, worktree: str) -> list[str]:
     """Build command-line args for the ACP adapter."""
     match backend:
         case "codex":
-            return [ACP_ADAPTERS["codex"], "-c", f'model="{model}"']
+            return [
+                ACP_ADAPTERS["codex"],
+                "-c", f'model="{model}"',
+                "-c", 'sandbox_permissions=["disk-full-read-write-access"]',
+            ]
         case "gemini":
             return [ACP_ADAPTERS["gemini"], "--acp", "--model", model]
         case _:  # claude

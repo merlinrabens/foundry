@@ -591,7 +591,7 @@ Foundry agents authenticate differently per backend:
 
 | Backend | Auth Method | Token Location |
 |---------|------------|----------------|
-| **Codex** | API key (`OPENAI_API_KEY`) | Environment variable — never expires |
+| **Codex** | API key (`OPENAI_API_KEY`) | Environment variable — never expires. Sandbox: `disk-full-read-write-access` (set in `acp_orchestrator.py`) |
 | **Claude** | OAuth setup-token | `~/.claude/.foundry-setup-token` — ~1 year validity |
 | **Gemini** | API key (`GEMINI_API_KEY`) | Environment variable — never expires |
 
@@ -620,6 +620,10 @@ If all sources are exhausted, the agent fails loudly with a clear error message.
 **CI reviews** use the same setup-token stored as `CLAUDE_CODE_OAUTH_TOKEN` GitHub secret. The `claude-code-action` handles refresh internally.
 
 **Renewal:** Run `claude setup-token` again when the token approaches its ~1 year expiry.
+
+### Codex Sandbox Permissions
+
+Codex CLI runs a macOS Seatbelt sandbox by default which blocks writes to `/tmp`, `__pycache__`, and temp directories. Foundry passes `sandbox_permissions=["disk-full-read-write-access"]` via `acp_orchestrator.py` so agents can run tests and write files in worktrees. This is safe because each agent runs in an isolated git worktree.
 
 ---
 
