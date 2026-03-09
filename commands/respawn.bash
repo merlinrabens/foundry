@@ -101,8 +101,9 @@ cmd_respawn() {
   # Claude OAuth token is refreshed at launch time in runner_script.bash (not baked here)
   [ -n "${GOOGLE_API_KEY:-}" ]             && env_block+="export GOOGLE_API_KEY='${GOOGLE_API_KEY}'"$'\n'
   [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ]   && env_block+="export OP_SERVICE_ACCOUNT_TOKEN='${OP_SERVICE_ACCOUNT_TOKEN}'"$'\n'
-  [ -n "${GITHUB_TOKEN:-}" ]               && env_block+="export GITHUB_TOKEN='${GITHUB_TOKEN}'"$'\n'
-  [ -n "${GH_TOKEN:-}" ]                   && env_block+="export GH_TOKEN='${GH_TOKEN}'"$'\n'
+  # NOTE: Do NOT bake GH_TOKEN or GITHUB_TOKEN — they are short-lived
+  # GitHub Actions installation tokens (ghs_) that expire and then override
+  # the valid keyring auth. Agents use gh's keyring auth instead.
   env_block+='[ -f "$HOME/.zprofile" ] && source "$HOME/.zprofile" 2>/dev/null'$'\n'
   env_block+='[ -f "$HOME/.zshrc" ] && source "$HOME/.zshrc" 2>/dev/null'$'\n'
   _write_runner_script "$agent" "$worktree" "$model" "$log_file" "$done_file" "$env_block" "high"
