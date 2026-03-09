@@ -608,14 +608,15 @@ echo -n "<TOKEN>" > ~/.claude/.foundry-setup-token
 chmod 600 ~/.claude/.foundry-setup-token
 ```
 
-**Token resolution priority** (in `runner_script.bash`):
+**How it works:** The runner script reads `~/.claude/.foundry-setup-token` and exports it as `CLAUDE_CODE_OAUTH_TOKEN`. The claude-agent-sdk/ACP adapter uses this to authenticate with the Anthropic API.
 
-1. `~/.claude/.foundry-setup-token` — long-lived setup-token (preferred)
-2. `~/.claude/.credentials.json` — short-lived OAuth token (8-12h, skipped if expired)
-3. `~/.claude/.foundry-token` — cache written by active CLI sessions
-4. macOS Keychain — last resort
+**CRITICAL — Single Token Source Rule:** The claude-agent-sdk reads OAuth tokens from MULTIPLE sources (env var, `~/.claude/.credentials.json`, `~/.claude/.foundry-token`, macOS Keychain) and concatenates ALL found tokens into one Authorization header, causing "invalid header value" errors. To prevent this:
 
-If all sources are exhausted, the agent fails loudly with a clear error message.
+- Keep ONLY `~/.claude/.foundry-setup-token` as the token source
+- Delete `~/.claude/.foundry-token` (legacy cache, not needed)
+- Remove `claudeAiOauth` from `~/.claude/.credentials.json`
+- Overwrite Keychain entry: `security add-generic-password -s "Claude Code-credentials" -a "$USER" -w '{}' -U`
+- If interactive CLI re-creates these files, clean them again
 
 **CI reviews** use the same setup-token stored as `CLAUDE_CODE_OAUTH_TOKEN` GitHub secret. The `claude-code-action` handles refresh internally.
 
