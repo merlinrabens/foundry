@@ -623,7 +623,7 @@ If all sources are exhausted, the agent fails loudly with a clear error message.
 
 ### Codex Sandbox Permissions
 
-Codex CLI runs a macOS Seatbelt sandbox by default which blocks writes to `/tmp`, `__pycache__`, and temp directories. Foundry passes `sandbox_permissions=["disk-full-read-write-access"]` via `acp_orchestrator.py` so agents can run tests and write files in worktrees. This is safe because each agent runs in an isolated git worktree.
+Codex CLI runs a macOS Seatbelt sandbox by default which blocks writes to `/tmp`, `__pycache__`, and temp directories. The `sandbox_permissions` config key is ignored by macOS Seatbelt (GitHub #10390). Foundry passes `sandbox_mode="danger-full-access"` via `acp_orchestrator.py` which fully disables the Seatbelt sandbox. This is safe because each agent runs in an isolated git worktree. The setting is also backed by `~/.codex/config.toml` (`sandbox_mode = "danger-full-access"`).
 
 ---
 
