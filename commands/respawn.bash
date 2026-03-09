@@ -4,6 +4,7 @@ cmd_respawn() {
   # Parse flags
   local prompt_file_override=""
   local force=false
+  local max_fixes_override=""
   local positional=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -19,6 +20,14 @@ cmd_respawn() {
         force=true
         shift
         ;;
+      --max-fixes)
+        max_fixes_override="$2"
+        shift 2
+        ;;
+      --max-fixes=*)
+        max_fixes_override="${1#*=}"
+        shift
+        ;;
       *)
         positional+=("$1")
         shift
@@ -29,7 +38,7 @@ cmd_respawn() {
 
   local task_id="$1"
   if [ -z "$task_id" ]; then
-    echo "Usage: foundry respawn <task-id> [--prompt-file <file>]"
+    echo "Usage: foundry respawn <task-id> [--force] [--max-fixes N]"
     return 1
   fi
 
@@ -38,6 +47,14 @@ cmd_respawn() {
   if [ -z "$task" ] || [ "$task" = "null" ]; then
     log_err "Task not found: $task_id"
     return 1
+  fi
+
+  # Apply --max-fixes override if provided
+  if [ -n "$max_fixes_override" ]; then
+    registry_batch_update "$task_id" "maxReviewFixes=$max_fixes_override"
+    task=$(registry_get_task "$task_id")
+    log "Review fix budget raised to $max_fixes_override"
+    force=true  # auto-force when raising budget
   fi
 
   local attempts max_attempts worktree log_file done_file branch spec repo agent model

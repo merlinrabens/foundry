@@ -494,6 +494,8 @@ foundry kill <id>                                 # Stop a running agent
 foundry steer <id> <msg>                          # Send mid-course correction via ACP signal
 foundry diagnose [--fix]                          # Self-repair diagnostics
 foundry respawn <id>                              # Retry failed agent with failure context
+foundry respawn <id> --force                      # Bypass exhausted budget
+foundry respawn <id> --max-fixes 40               # Raise review fix budget and respawn
 foundry respawn <id> --prompt-file /tmp/fix.md    # Custom fix prompt
 
 # ─── Pipelines ─────────────────────────────────────────────────────────
