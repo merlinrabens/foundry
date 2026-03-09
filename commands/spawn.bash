@@ -127,19 +127,46 @@ cmd_spawn() {
   #  - task_id  → <proj>-issue-<N>  (stable, dedup-safe)
   #  - task_name → issue-<N>        (drives branch + worktree names)
   #  - task_content gets a mandatory PR instruction appended
+  # ── Linear prefix resolution (used for PR title + body) ──────────────────
+  local _linear_id=""
+  if [ "${LINEAR_INTEGRATION:-false}" = "true" ] && [ -n "${LINEAR_PREFIX_MAP:-}" ]; then
+    local _gh_slug _linear_prefix
+    _gh_slug=$(_get_gh_repo_slug "$repo_dir" 2>/dev/null || echo "")
+    if [ -n "$_gh_slug" ]; then
+      _linear_prefix=$(echo "$LINEAR_PREFIX_MAP" | jq -r \
+        --arg slug "$_gh_slug" \
+        'to_entries[] | select(.key | ascii_downcase == ($slug | ascii_downcase)) | .value // empty' 2>/dev/null || echo "")
+      if [ -n "$_linear_prefix" ] && [ -n "$issue_number" ]; then
+        _linear_id="${_linear_prefix}-${issue_number}"
+        log "Linear integration: will use ${_linear_id}"
+      fi
+    fi
+  fi
+
   if [ -n "$issue_number" ]; then
     task_name="issue-${issue_number}"
     task_id="$(sanitize "$project_name")-issue-${issue_number}"
+
+    # Build PR closing instructions
+    local pr_closes_example="fixes #${issue_number}"
+    if [ -n "$_linear_id" ]; then
+      pr_closes_example="fixes ${_linear_id}
+fixes #${issue_number}"
+    fi
+
     task_content="${task_content}
 
 ## PR Requirement
 
-When you open the pull request, you MUST include \`fixes #${issue_number}\` in the PR description body.
-This auto-closes the GitHub Issue on merge. Example:
+When you open the pull request:
+- The PR title MUST start with \`${_linear_id:-}${_linear_id:+: }\` (e.g. \`${_linear_id:-issue-${issue_number}}: Short description\`)
+- The PR description body MUST include these lines:
 
 \`\`\`
-fixes #${issue_number}
-\`\`\`"
+${pr_closes_example}
+\`\`\`
+
+This updates the project board and auto-closes the GitHub Issue on merge."
   fi
 
   # Check if already running
@@ -235,7 +262,12 @@ fixes #${issue_number}
 
   # ── Generate prompt ──
   local commit_msg="feat: ${task_name}"
-  local pr_title="[foundry] ${task_name}"
+  local pr_title
+  if [ -n "$_linear_id" ]; then
+    pr_title="${_linear_id}: ${task_name}"
+  else
+    pr_title="[foundry] ${task_name}"
+  fi
   local pr_body="One-shot agent build for: ${task_name}"
   local prompt_file="${worktree_dir}/.foundry-prompt.md"
 

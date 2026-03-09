@@ -70,7 +70,7 @@ Creates git worktree + branch
     ↓
 Spawns agent with the spec as context
     ↓
-Agent writes code, opens PR with `fixes #N`
+Agent writes code, opens PR with `fixes #N` (+ `fixes ENG-N` when Linear enabled)
     ↓
 3 AI reviewers review independently
     ↓
@@ -247,13 +247,27 @@ Foundry works perfectly standalone. Cron jobs + local agents + GitHub. OpenClaw 
 
 ## Linear Integration (Optional)
 
-Foundry has zero knowledge of Linear. They communicate through GitHub:
+Foundry never calls the Linear API. It uses GitHub as the bridge:
 
-1. Linear creates GitHub Issues (two-way sync)
+1. Linear syncs with GitHub Issues bi-directionally (via GitHub App)
 2. Foundry builds from GitHub Issues
-3. PR merges → GitHub closes issue → Linear auto-moves to Done
+3. When `LINEAR_INTEGRATION=true`, Foundry puts the Linear ID in the PR title (e.g. `ENG-5: issue-5`) and both closing keywords in the body (`fixes ENG-5` + `fixes #5`)
+4. Linear recognizes its identifier in the PR title and automatically tracks: In Progress (PR opened), Done (PR merged)
+5. `fixes #5` in the PR body auto-closes the GitHub Issue on merge
 
-**Setup:** Linear Settings → Integrations → GitHub → Enable two-way sync. 10 minutes.
+**Setup:**
+```bash
+# 1. Linear Settings > Integrations > GitHub > Enable (10 minutes)
+
+# 2. config.env
+LINEAR_INTEGRATION=true
+LINEAR_PREFIX_MAP='{
+  "myorg/my-repo": "ENG",
+  "myorg/design-system": "DES"
+}'
+```
+
+Repos not in the map are unaffected. When disabled (default), PRs only include `fixes #N`.
 
 Your stakeholders see a board. They don't know about Foundry. They see "Done."
 

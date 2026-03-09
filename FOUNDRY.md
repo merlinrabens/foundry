@@ -658,6 +658,40 @@ All tunables in `config.env`:
 | `AUTO_MERGE_LOW_RISK` | `false` | Auto-merge LOW risk PRs |
 | `STALE_THRESHOLD_SECS` | `7200` | Flag agents running >2h without PR |
 | `IDLE_THRESHOLD_SECS` | `1800` | Flag agents idle >30min with zero changes |
+| `LINEAR_INTEGRATION` | `false` | Enable Linear identifier injection in PRs |
+| `LINEAR_PREFIX_MAP` | `{}` | JSON map of `"owner/repo"` to Linear team prefix |
+
+---
+
+## Linear Integration (Optional)
+
+When enabled, Foundry automatically injects Linear issue identifiers into PR descriptions so stakeholders can track progress on a Linear board without any manual work.
+
+**How it works:**
+- Foundry maps GitHub repos to Linear team prefixes (e.g. `myorg/my-repo` -> `ENG`)
+- For issue-based tasks, the PR title gets the Linear ID and the body gets both closing keywords:
+  ```
+  Title: ENG-5: issue-5
+  Body:
+  fixes ENG-5    <- Linear: links PR
+  fixes #5       <- GitHub: auto-closes the issue on merge
+  ```
+- Linear recognizes the ID in the PR title and automatically tracks status:
+  - PR opened -> In Progress
+  - PR merged -> Done
+- Foundry never calls the Linear API. It's a static prefix lookup, nothing more.
+
+**Setup:**
+```bash
+# config.env
+LINEAR_INTEGRATION=true
+LINEAR_PREFIX_MAP='{
+  "myorg/my-repo": "ENG",
+  "myorg/design-system": "DES"
+}'
+```
+
+Repos not in the map are unaffected. When disabled (default), Foundry behaves exactly as before.
 
 ---
 
@@ -757,7 +791,7 @@ Configured in `config.env` under `KNOWN_PROJECTS`:
 ~/projects/primal-meat-club/aura-shopify     # Shopify store (pnpm, Next.js, Supabase)
 ~/projects/primal-meat-club/ad-engine        # Ad management (pnpm, Next.js)
 ~/projects/merlinrabens/growthpulse          # Growth analytics (pnpm, Next.js)
-~/projects/hukleberry/lead-gen               # Lead generation (pnpm, Next.js)
+~/projects/huklberry/lead-gen                # Lead generation (pnpm, Next.js)
 ~/projects/merlinrabens/avatarfunnels        # Avatar funnels website
 ```
 
