@@ -65,12 +65,13 @@ cmd_status() {
 
     # Build checks summary (C=CI, R=Claude, K=Codex, G=Gemini, S=Synced)
     local p c r k g s
-    eval "$(echo "$task" | jq -r '@sh "p=\(.checks.prCreated // false) c=\(.checks.ciPassed // false) s=\(.checks.branchSynced // false) r=\(.checks.claudeReview // "null") k=\(.checks.codexReview // "null") g=\(.checks.geminiReview // "null")"')"
+    local ga
+    eval "$(echo "$task" | jq -r '@sh "p=\(.checks.prCreated // false) c=\(.checks.ciPassed // false) s=\(.checks.branchSynced // false) r=\(.checks.claudeReview // "null") k=\(.checks.codexReview // "null") g=\(.checks.geminiReview // "null") ga=\(.checks.geminiAddressed // false)"')"
     checks_summary=""
     [ "$c" = "true" ] && checks_summary+="C" || checks_summary+="."
     [ "$r" = "APPROVED" ] && checks_summary+="R" || checks_summary+="."
     [ "$k" = "APPROVED" ] && checks_summary+="K" || checks_summary+="."
-    if [ "$g" = "APPROVED" ] || [ "$g" = "AUTO_PASSED" ]; then
+    if [ "$g" = "APPROVED" ] || [ "$g" = "AUTO_PASSED" ] || [ "$ga" = "true" ]; then
       checks_summary+="G"
     else
       checks_summary+="."

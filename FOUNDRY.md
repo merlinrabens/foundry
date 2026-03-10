@@ -162,7 +162,7 @@ lib/
   notifications.bash      34 lines   should_notify(), build_checks_summary()
   spawn_guards.bash       52 lines   check_concurrent_limit(), detect_parallel_conflict(), parse_spawn_flags()
   video_evidence.bash     49 lines   has_frontend_changes(), check_screenshots_in_pr(), get_screenshot_status()
-  check_helpers.bash     160 lines   _try_respawn_or_exhaust, _try_review_fix, _all_checks_pass, _evaluate_pr, _update_pr_checks
+  check_helpers.bash     325 lines   _try_respawn_or_exhaust, _try_review_fix, _all_checks_pass, _evaluate_pr, _update_pr_checks (incl. branchSynced)
   preflight_fn.bash       88 lines   _run_preflight (pre-flight validation)
   respawn_helpers.bash    78 lines   _gather_failure_context, _gather_review_feedback
   runner_script.bash      50 lines   _write_runner_script (shared between spawn + respawn)
@@ -377,23 +377,28 @@ status=$(get_screenshot_status "src/App.tsx" "$pr_body")
 
 ---
 
-## CRKG Status System
+## CRKGS Status System
 
-Four-letter status code shown in `foundry status` output. Each letter represents a check gate. The PR link is shown directly in its own column.
+Five-letter status code shown in `foundry status` output. Each letter represents a check gate.
 
 | Letter | Check | Meaning |
 |--------|-------|---------|
 | **C** | CI Passed | All CI checks green |
 | **R** | Claude Review | Claude Code Action approved |
 | **K** | Codex Review | Codex Action approved (K = codeK) |
-| **G** | Gemini Review | Gemini Code Assist approved or auto-passed |
+| **G** | Gemini Review | Gemini approved, auto-passed, OR findings addressed (`geminiAddressed=true`) |
+| **S** | Branch Synced | PR branch contains all commits from main (no merge conflicts) |
 
-A task showing `CRKG` has all 4 checks passing and is `ready` for merge. The status display also shows an `S` (Synced) flag for branch sync state, making the full column `CRKGS`.
+A task showing `CRKGS` has all 5 checks passing and is `ready` for merge.
 
 Partial examples:
-- `C....` = CI green, waiting on all 3 reviews
-- `CR...` = Claude approved, waiting on Codex + Gemini
+- `C....` = CI green, waiting on all 3 reviews + sync check
+- `CR..S` = Claude approved, branch synced, waiting on Codex + Gemini
 - `.....` = CI still running, no reviews yet
+
+**Gemini G logic**: Gemini only reviews on PR `opened/reopened`, not `synchronize`. After a fix cycle, Gemini's inline comments persist (GitHub API returns outdated comments), so `geminiReview` stays `HAS_FINDINGS`. The G column shows green when `geminiAddressed=true` — meaning a fix was attempted and the system no longer blocks on stale findings.
+
+**Branch Synced S logic**: `git merge-base --is-ancestor origin/main HEAD` — checks if the PR branch is up-to-date with main. Important when multiple agents work on the same repo to detect merge conflicts early.
 
 ---
 
@@ -424,8 +429,10 @@ When enabled, Foundry automatically injects Linear issue identifiers into PR des
 - For issue-based tasks, the PR title gets the Linear ID and the body gets both closing keywords:
   ```
   Title: HUK-5: issue-5
+  Body:
+  fixes HUK-5    <- Linear: links PR
+  fixes #5       <- GitHub: auto-closes the issue on merge
   ```
-  The Linear ID in the title is all that's needed. On merge, Linear auto-closes both the Linear issue and the synced GitHub issue.
 - Linear recognizes the ID in the PR title and automatically tracks status:
   - PR opened -> In Progress
   - PR merged -> Done
@@ -584,7 +591,7 @@ Six workflow templates deployable to any repo via `deploy-ci.sh`.
 | Template | Purpose | Triggers |
 |----------|---------|----------|
 | `claude-code-review.yml` | Claude Code Action review | PR opened, synchronize |
-| `codex-review.yml` | Codex Code Action review | PR opened, synchronize |
+| `codex-review.yml` | Codex Code Action review (full clone, `base..head` range) | PR opened, synchronize |
 | `gemini-check.yml` | Gemini Code Assist review | PR opened, reopened |
 | `test-runner.yml` | Lint, types, unit tests | PR opened, synchronize |
 | `visual-evidence.yml` | Playwright video screencasts + FFmpeg | PR opened, synchronize |
@@ -592,6 +599,10 @@ Six workflow templates deployable to any repo via `deploy-ci.sh`.
 
 **Required secrets:** `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`), `OPENAI_API_KEY`
 **Required app:** Gemini Code Assist (free, GitHub Marketplace)
+
+**Disabling reviewers:** Set GitHub Actions variable `DISABLE_CLAUDE_REVIEW=true` on a repo to skip Claude reviews (e.g., when subscription is inactive). Foundry's check loop auto-detects missing reviews and treats them as approved so fix cycles aren't blocked. Similarly for `DISABLE_CODEX_REVIEW`.
+
+**CRITICAL: Codex review scoping (Mar 10 fix):** The template uses `fetch-depth: 0` (full clone) and `git log base..head` (two dots). The old version used shallow fetch + three dots (`...`), which caused Codex to review unrelated base-branch commits alongside PR changes — leading to 150+ false-positive review cycles on ad-engine PR#8. NEVER use `...` (symmetric difference) with `git log` for PR scoping; always use `..` (commits in head not in base).
 
 ### Foundry Gate (Event-Driven Check)
 
@@ -690,6 +701,7 @@ All tunables in `config.env`:
 | `CODEX_MODEL` | `gpt-5.3-codex` | Codex model |
 | `CODEX_REASONING` | `high` | Default Codex reasoning level |
 | `GEMINI_MODEL` | `gemini-3.5-pro` | Gemini model |
+| `ENABLED_BACKENDS` | `codex,claude,gemini` | Comma-separated list of backends available for spawning |
 | `DEFAULT_MODEL` | `codex` | Backend for `foundry spawn` without model arg |
 | `MAX_RETRIES` | `5` | Auto-respawn attempts before exhausted |
 | `AGENT_TIMEOUT` | `1800` | 30 min timeout per agent |

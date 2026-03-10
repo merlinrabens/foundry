@@ -12,8 +12,8 @@ _FOUNDRY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Fetches CI checks, reviews, screenshot evidence for a PR.
 # Sets global result vars: _PR_ANY_FAIL, _PR_ANY_PENDING, _PR_CLAUDE_APPROVED,
 # _PR_CODEX_APPROVED, _PR_GEMINI_APPROVED, _PR_CLAUDE_REVIEWED, _PR_CODEX_REVIEWED,
-# _PR_ALL_REVIEWS_IN, _PR_CHANGES_REQUESTED,
-# _PR_CHECKS_SUMMARY (CRKG), _PR_SCREENSHOT_STATUS, _PR_URL, _PR_MODIFIES_WORKFLOWS
+# _PR_ALL_REVIEWS_IN, _PR_CHANGES_REQUESTED, _PR_BRANCH_SYNCED,
+# _PR_CHECKS_SUMMARY (CRKGS), _PR_SCREENSHOT_STATUS, _PR_URL, _PR_MODIFIES_WORKFLOWS
 _evaluate_pr() {
   local check_dir="$1" pr_ref="$2" task_json="$3"
 
@@ -27,6 +27,7 @@ _evaluate_pr() {
   _PR_MODIFIES_WORKFLOWS=0
   _PR_DEPLOY_FAILS=0; _PR_CI_FAILS=0
   _PR_DEPLOY_FAIL_NAMES=""; _PR_CI_FAIL_NAMES=""
+  _PR_BRANCH_SYNCED=""
 
   # Fetch PR URL
   _PR_URL=$(cd "$check_dir" 2>/dev/null && gh_retry gh pr view "$pr_ref" --json url --jq '.url' || echo "PR $pr_ref")
@@ -107,10 +108,28 @@ _evaluate_pr() {
   # Determine if all reviewers have submitted
   # First cycle: wait for Claude + Codex + Gemini (Gemini only reviews on open, not synchronize)
   # Subsequent cycles (reviewFixAttempts > 0): only wait for Claude + Codex
+  # If a reviewer is disabled (no workflow run = no review), treat as reviewed
   local rfx_count
   rfx_count=$(echo "$task_json" | jq -r '.reviewFixAttempts // 0' 2>/dev/null || echo "0")
   local gemini_reviewed=1
   [ "${_PR_GEMINI_PENDING:-0}" -eq 1 ] && gemini_reviewed=0
+
+  # If Claude review never ran (disabled via DISABLE_CLAUDE_REVIEW), treat as reviewed+approved
+  local claude_check_exists
+  claude_check_exists=$(echo "$checks_json" | jq '[.[] | select(.name == "claude-review")] | length' 2>/dev/null || echo "0")
+  if [ "$_PR_CLAUDE_REVIEWED" -eq 0 ] && [ "$claude_check_exists" -eq 0 ]; then
+    _PR_CLAUDE_REVIEWED=1
+    _PR_CLAUDE_APPROVED=1
+  fi
+
+  # If Codex review never ran (disabled via DISABLE_CODEX_REVIEW), treat as reviewed+approved
+  local codex_check_exists
+  codex_check_exists=$(echo "$checks_json" | jq '[.[] | select(.name == "codex-review")] | length' 2>/dev/null || echo "0")
+  if [ "$_PR_CODEX_REVIEWED" -eq 0 ] && [ "$codex_check_exists" -eq 0 ]; then
+    _PR_CODEX_REVIEWED=1
+    _PR_CODEX_APPROVED=1
+  fi
+
   if [ "$_PR_CLAUDE_REVIEWED" -eq 1 ] && [ "$_PR_CODEX_REVIEWED" -eq 1 ]; then
     if [ "$rfx_count" -gt 0 ] || [ "$gemini_reviewed" -eq 1 ]; then
       _PR_ALL_REVIEWS_IN=1
@@ -123,17 +142,28 @@ _evaluate_pr() {
   has_changes_requested=$(echo "$latest_reviews" | jq '[.[] | select(.state == "CHANGES_REQUESTED")] | length' 2>/dev/null || echo "0")
   [ "$has_changes_requested" -gt 0 ] && _PR_CHANGES_REQUESTED=1
 
+  # Branch synced to main? (no merge conflicts)
+  if [ -d "$check_dir" ]; then
+    git -C "$check_dir" fetch origin main --quiet 2>/dev/null || true
+    if git -C "$check_dir" merge-base --is-ancestor origin/main HEAD 2>/dev/null; then
+      _PR_BRANCH_SYNCED="true"
+    else
+      _PR_BRANCH_SYNCED="false"
+    fi
+  fi
+
   # Screenshot evidence
   local pr_body
   pr_body=$(cd "$check_dir" 2>/dev/null && gh_retry gh pr view "$pr_ref" --json body --jq '.body' || echo "")
   _PR_SCREENSHOT_STATUS=$(get_screenshot_status "$changed_files" "$pr_body")
 
-  # Build checks summary (CRKG)
+  # Build checks summary (CRKGS)
   _PR_CHECKS_SUMMARY=""
   [ "$_PR_ANY_FAIL" -eq 0 ] && [ "$_PR_ANY_PENDING" -eq 0 ] && _PR_CHECKS_SUMMARY="${_PR_CHECKS_SUMMARY}C"
   [ "$_PR_CLAUDE_APPROVED" -gt 0 ] && _PR_CHECKS_SUMMARY="${_PR_CHECKS_SUMMARY}R"
   [ "$_PR_CODEX_APPROVED" -gt 0 ] && _PR_CHECKS_SUMMARY="${_PR_CHECKS_SUMMARY}K"
   [ "$_PR_GEMINI_APPROVED" -gt 0 ] && _PR_CHECKS_SUMMARY="${_PR_CHECKS_SUMMARY}G"
+  [ "$_PR_BRANCH_SYNCED" = "true" ] && _PR_CHECKS_SUMMARY="${_PR_CHECKS_SUMMARY}S"
 }
 
 # _update_pr_checks <task_id>
@@ -146,6 +176,8 @@ _update_pr_checks() {
   [ "$_PR_CODEX_APPROVED" -gt 0 ] && updates+=("checks.codexReview=APPROVED")
   [ "$_PR_GEMINI_APPROVED" -gt 0 ] && updates+=("checks.geminiReview=APPROVED")
   [ "$_PR_SCREENSHOT_STATUS" != "null" ] && updates+=("checks.screenshotsIncluded=$_PR_SCREENSHOT_STATUS")
+  [ "$_PR_BRANCH_SYNCED" = "true" ] && updates+=("checks.branchSynced=true")
+  [ "$_PR_BRANCH_SYNCED" = "false" ] && updates+=("checks.branchSynced=false")
   [ ${#updates[@]} -gt 0 ] && registry_batch_update "$task_id" "${updates[@]}"
 }
 
@@ -158,7 +190,11 @@ _try_respawn_or_exhaust() {
 
   if [ "$attempts" -lt "$max_attempts" ]; then
     log_warn "  Auto-respawning (attempt $((attempts + 1))/$max_attempts)..."
-    tg_notify_task "$task_id" "${reason_msg} on \`$task_id\`, respawning (attempt $((attempts + 1))/$max_attempts)"
+    tg_notify_task "$task_id" "🔄 <b>${reason_msg}</b>
+<code>${task_id}</code>
+Respawning (attempt $((attempts + 1))/$max_attempts)${pr_url:+
+
+<a href=\"${pr_url}\">→ PR</a>}" "HTML"
     if cmd_respawn "$task_id"; then
       return 0
     else
@@ -182,8 +218,11 @@ _try_respawn_or_exhaust() {
     local now_ts; now_ts=$(date +%s)
     local duration=$(( now_ts - started ))
     pattern_log "$task_id" "$agent" "$model" "$retries" "false" "$duration" "$project" "feature"
-    tg_notify_task "$task_id" "Agent exhausted after $max_attempts attempts: \`$task_id\`. Needs human.${pr_url:+
-[View PR](${pr_url})}"
+    tg_notify_task "$task_id" "🚨 <b>Agent exhausted</b>
+<code>${task_id}</code>
+Failed after ${max_attempts} attempts — needs human intervention${pr_url:+
+
+<a href=\"${pr_url}\">→ PR</a>}" "HTML"
     return 1
   fi
 }
@@ -208,7 +247,11 @@ _try_review_fix() {
     local next_fix=$((review_fixes + 1))
     registry_update_field "$task_id" "reviewFixAttempts" "$next_fix"
     log_warn "  Review-fix cycle ($next_fix/$max_review_fixes)..."
-    tg_notify_task "$task_id" "${reason_msg} on \`$task_id\`, auto-fixing (review cycle $next_fix/$max_review_fixes)"
+    tg_notify_task "$task_id" "🔧 <b>${reason_msg}</b>
+<code>${task_id}</code>
+Auto-fixing (review cycle ${next_fix}/${max_review_fixes})${pr_url:+
+
+<a href=\"${pr_url}\">→ PR</a>}" "HTML"
     if cmd_respawn --force "$task_id"; then
       return 0
     else
@@ -220,8 +263,11 @@ _try_review_fix() {
     local now_ts; now_ts=$(date +%s)
     local duration=$(( now_ts - started ))
     pattern_log "$task_id" "$agent" "$model" "$retries" "false" "$duration" "$project" "feature"
-    tg_notify_task "$task_id" "Review-fix exhausted after $max_review_fixes cycles: \`$task_id\`. Needs human.${pr_url:+
-[View PR](${pr_url})}"
+    tg_notify_task "$task_id" "🚨 <b>Review-fix exhausted</b>
+<code>${task_id}</code>
+Failed after ${max_review_fixes} review-fix cycles — needs human intervention${pr_url:+
+
+<a href=\"${pr_url}\">→ PR</a>}" "HTML"
     return 1
   fi
 }
@@ -253,7 +299,10 @@ _try_auto_merge() {
     log "Auto-merging LOW risk PR: $pr_url"
     if cd "$check_dir" 2>/dev/null && gh pr merge --squash 2>/dev/null; then
       registry_batch_update "$task_id" "status=merged" "completedAt=$(date +%s)"
-      tg_notify_task "$task_id" "Auto-merged LOW risk PR [$risk_tier]: $pr_url"
+      tg_notify_task "$task_id" "✅ <b>Auto-merged</b> (LOW risk)
+<code>${task_id}</code>
+
+<a href=\"${pr_url}\">→ PR</a>" "HTML"
       return 0
     else
       log_warn "Auto-merge failed for $task_id (branch protection?)"
