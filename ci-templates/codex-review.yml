@@ -22,13 +22,21 @@ jobs:
       vars.DISABLE_CODEX_REVIEW != 'true'
     permissions:
       contents: read
+      pull-requests: read
     outputs:
       final_message: ${{ steps.run_codex.outputs.final-message }}
     steps:
       - uses: actions/checkout@v5
         with:
           ref: refs/pull/${{ github.event.pull_request.number }}/merge
-          fetch-depth: 0
+          fetch-depth: 1
+
+      - name: Generate PR diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr-diff.patch
+          echo "Diff size: $(wc -l < /tmp/pr-diff.patch) lines"
 
       - name: Run Codex Code Review
         id: run_codex
@@ -37,16 +45,18 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           prompt: |
             This is PR #${{ github.event.pull_request.number }} for ${{ github.repository }}.
-
-            Review ONLY the changes introduced by this PR:
-              git log --oneline ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
-
-            Focus on edge cases, logic errors, missing error handling,
-            race conditions, and security vulnerabilities.
-
-            Be thorough but concise. Focus on real bugs, not style.
-
             PR title: ${{ github.event.pull_request.title }}
+
+            The diff to review has been saved to /tmp/pr-diff.patch.
+            Read that file to see EXACTLY what changed. Review ONLY the
+            code in that diff — do not explore the rest of the codebase
+            for additional issues beyond what the diff touches.
+
+            Focus on:
+            - Edge cases and logic errors in the changed code
+            - Missing error handling in new code paths
+            - Race conditions and security vulnerabilities
+            - Real bugs, not style or theoretical concerns
 
             IMPORTANT: End your review with EXACTLY one of these lines:
             - VERDICT: CLEAN (no issues found)
@@ -123,4 +133,3 @@ jobs:
               conclusion,
               output: { title, summary: `Review event: ${event}` }
             });
-
