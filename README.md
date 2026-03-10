@@ -70,7 +70,7 @@ Creates git worktree + branch
     ↓
 Spawns agent with the spec as context
     ↓
-Agent writes code, opens PR with `fixes #N` (+ `fixes ENG-N` when Linear enabled)
+Agent writes code, opens PR (with Linear ID in title when Linear enabled, or `fixes #N` in body otherwise)
     ↓
 3 AI reviewers review independently
     ↓
@@ -251,9 +251,9 @@ Foundry never calls the Linear API. It uses GitHub as the bridge:
 
 1. Linear syncs with GitHub Issues bi-directionally (via GitHub App)
 2. Foundry builds from GitHub Issues
-3. When `LINEAR_INTEGRATION=true`, Foundry puts the Linear ID in the PR title (e.g. `ENG-5: issue-5`) and both closing keywords in the body (`fixes ENG-5` + `fixes #5`)
+3. When `LINEAR_INTEGRATION=true`, Foundry puts the Linear ID in the PR title (e.g. `ENG-5: issue-5`)
 4. Linear recognizes its identifier in the PR title and automatically tracks: In Progress (PR opened), Done (PR merged)
-5. `fixes #5` in the PR body auto-closes the GitHub Issue on merge
+5. On merge, Linear auto-closes both the Linear issue AND the synced GitHub issue. No `fixes #N` needed in the body.
 
 **Setup:**
 ```bash
@@ -267,7 +267,7 @@ LINEAR_PREFIX_MAP='{
 }'
 ```
 
-Repos not in the map are unaffected. When disabled (default), PRs only include `fixes #N`.
+Repos not in the map are unaffected. When disabled (default), PRs include `fixes #N` for GitHub issue closing.
 
 Your stakeholders see a board. They don't know about Foundry. They see "Done."
 

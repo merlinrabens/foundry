@@ -424,10 +424,8 @@ When enabled, Foundry automatically injects Linear issue identifiers into PR des
 - For issue-based tasks, the PR title gets the Linear ID and the body gets both closing keywords:
   ```
   Title: HUK-5: issue-5
-  Body:
-  fixes HUK-5    <- Linear: links PR
-  fixes #5       <- GitHub: auto-closes the issue on merge
   ```
+  The Linear ID in the title is all that's needed. On merge, Linear auto-closes both the Linear issue and the synced GitHub issue.
 - Linear recognizes the ID in the PR title and automatically tracks status:
   - PR opened -> In Progress
   - PR merged -> Done

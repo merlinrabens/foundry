@@ -147,11 +147,16 @@ cmd_spawn() {
     task_name="issue-${issue_number}"
     task_id="$(sanitize "$project_name")-issue-${issue_number}"
 
-    # Build PR closing instructions
-    local pr_closes_example="fixes #${issue_number}"
+    # Build PR instructions
+    local pr_body_instructions=""
     if [ -n "$_linear_id" ]; then
-      pr_closes_example="fixes ${_linear_id}
-fixes #${issue_number}"
+      # Linear handles everything: ID in title auto-closes both Linear + GH issue on merge
+      pr_body_instructions="- The PR title MUST start with \`${_linear_id}: \` (e.g. \`${_linear_id}: Short description\`)
+- The Linear ID in the title is all that's needed. On merge, Linear auto-closes both the Linear issue and the GitHub issue."
+    else
+      # No Linear: use fixes #N for GitHub issue closing
+      pr_body_instructions="- The PR description body MUST include: \`fixes #${issue_number}\`
+- This auto-closes the GitHub Issue on merge."
     fi
 
     task_content="${task_content}
@@ -159,14 +164,7 @@ fixes #${issue_number}"
 ## PR Requirement
 
 When you open the pull request:
-- The PR title MUST start with \`${_linear_id:-}${_linear_id:+: }\` (e.g. \`${_linear_id:-issue-${issue_number}}: Short description\`)
-- The PR description body MUST include these lines:
-
-\`\`\`
-${pr_closes_example}
-\`\`\`
-
-This updates the project board and auto-closes the GitHub Issue on merge."
+${pr_body_instructions}"
   fi
 
   # Check if already running
