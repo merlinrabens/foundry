@@ -17,7 +17,9 @@ concurrency:
 jobs:
   codex-review:
     runs-on: ubuntu-latest
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      vars.DISABLE_CODEX_REVIEW != 'true'
     permissions:
       contents: read
     outputs:
@@ -26,15 +28,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: refs/pull/${{ github.event.pull_request.number }}/merge
-
-      - name: Pre-fetch base and head refs
-        run: |
-          git fetch --no-tags --depth=1 origin \
-            ${{ github.event.pull_request.base.sha }} \
-            ${{ github.event.pull_request.head.sha }}
-          git fetch --no-tags origin \
-            ${{ github.event.pull_request.base.ref }} \
-            +refs/pull/${{ github.event.pull_request.number }}/head
+          fetch-depth: 0
 
       - name: Run Codex Code Review
         id: run_codex
@@ -45,7 +39,7 @@ jobs:
             This is PR #${{ github.event.pull_request.number }} for ${{ github.repository }}.
 
             Review ONLY the changes introduced by this PR:
-              git log --oneline ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}
+              git log --oneline ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
 
             Focus on edge cases, logic errors, missing error handling,
             race conditions, and security vulnerabilities.
