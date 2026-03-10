@@ -83,9 +83,11 @@ cmd_orchestrate() {
     if [ -f "$spec_or_task" ]; then
       enrich_spec_with_recon "$repo_dir" "$spec_or_task"
     else
-      # Text description — create enriched temp spec
-      local recon_spec_file
-      recon_spec_file=$(mktemp "/tmp/foundry-recon-XXXXX.md")
+      # Text description — create enriched temp spec with sanitized task name
+      local recon_spec_file recon_task_name
+      recon_task_name=$(echo "$task_content" | head -1 | tr '[:upper:]' '[:lower:]' | \
+        sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//' | head -c 40)
+      recon_spec_file=$(mktemp "/tmp/${recon_task_name:-foundry-task}-XXXXX.md")
       printf '# %s\n\n%s\n' "$(echo "$task_content" | head -1)" "$task_content" > "$recon_spec_file"
       enrich_spec_with_recon "$repo_dir" "$recon_spec_file"
       spec_or_task="$recon_spec_file"
@@ -96,9 +98,20 @@ cmd_orchestrate() {
   fi
 
   # Jerry selects the agent
-  _jerry_select_agent "$repo_dir" "$task_content" "$hint"
+  if ! _jerry_select_agent "$repo_dir" "$task_content" "$hint"; then
+    log_err "Jerry routing failed — no enabled backend found"
+    [ -n "$issue_spec_file" ] && rm -f "$issue_spec_file"
+    return 1
+  fi
   local selected_backend="$JERRY_BACKEND"
   local selected_model="$JERRY_MODEL"
+
+  # Guard against empty model from jerry routing (defensive)
+  if [ -z "$selected_model" ]; then
+    log_warn "Jerry returned empty model — falling back to codex"
+    selected_backend="codex"
+    selected_model="codex"
+  fi
 
   log "Jerry selected: $selected_backend (model: $selected_model, hint: $hint)"
 

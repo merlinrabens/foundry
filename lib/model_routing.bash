@@ -3,6 +3,15 @@
 [[ -n "${_LIB_MODEL_ROUTING_LOADED:-}" ]] && return 0
 _LIB_MODEL_ROUTING_LOADED=1
 
+# is_backend_enabled <backend>
+# Returns 0 if the backend is in ENABLED_BACKENDS, 1 otherwise.
+# ENABLED_BACKENDS defaults to "codex,claude,gemini" (all enabled).
+is_backend_enabled() {
+  local backend="$1"
+  local enabled="${ENABLED_BACKENDS:-codex,claude,gemini}"
+  [[ ",$enabled," == *",$backend,"* ]]
+}
+
 # detect_model_backend <model_string>
 # Resolves a user-facing model string (e.g. "codex", "codex:medium", "claude", "claude-complex", "gemini", "gemini:custom-model")
 # into concrete backend + model + reasoning settings.
@@ -18,6 +27,12 @@ detect_model_backend() {
   CODEX_REASONING_OUT="${CODEX_REASONING:-high}"
   GEMINI_MODEL_OUT="${GEMINI_MODEL:-gemini-3.5-pro}"
   MODEL_OUT="$input"
+
+  # Empty or whitespace-only input → use default model
+  if [[ -z "${input// /}" ]]; then
+    input="${DEFAULT_MODEL:-codex}"
+    MODEL_OUT="$input"
+  fi
 
   if [[ "$input" == openclaw* ]]; then
     AGENT_BACKEND_OUT="jerry"   # Meta-backend — resolved at spawn time by _jerry_select_agent

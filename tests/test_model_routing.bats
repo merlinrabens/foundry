@@ -88,9 +88,10 @@ setup() {
   [ "$MODEL_OUT" = "claude-sonnet-4-6" ]
 }
 
-@test "empty string → backend=claude (fallback)" {
+@test "empty string → defaults to codex (safe fallback)" {
   detect_model_backend ""
-  [ "$AGENT_BACKEND_OUT" = "claude" ]
+  [ "$AGENT_BACKEND_OUT" = "codex" ]
+  [ "$MODEL_OUT" = "${CODEX_MODEL:-gpt-5.3-codex}" ]
 }
 
 @test "unknown model string → backend=claude, model=passthrough" {

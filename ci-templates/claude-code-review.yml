@@ -1,5 +1,5 @@
 # Claude Code Review — Portable CI Template
-# Requires: ANTHROPIC_API_KEY secret in repo settings (API key from console.anthropic.com)
+# Requires: CLAUDE_CODE_OAUTH_TOKEN secret in repo settings (OAuth token from Claude Code CLI)
 # Blocking: YES — CHANGES_REQUESTED blocks merge
 #
 # Deploy: copy to .github/workflows/claude-code-review.yml in any repo
@@ -38,7 +38,7 @@ jobs:
         id: claude-review
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           track_progress: false
           allowed_bots: "claude[bot]"
           prompt: |
@@ -96,12 +96,14 @@ jobs:
 
             **CRITICAL: Use `gh pr review` to submit your review, NOT `gh pr comment`.**
 
-            After completing your analysis:
-            - If you found NO critical issues: Run `gh pr review ${{ github.event.pull_request.number }} --approve --body "Your feedback summary"`
-            - If you found issues requiring changes: Run `gh pr review ${{ github.event.pull_request.number }} --request-changes --body "Your feedback summary"`
-            - If you have non-blocking suggestions only: Run `gh pr review ${{ github.event.pull_request.number }} --comment --body "Your feedback summary"`
+            After completing your analysis, you MUST submit exactly ONE formal review using `gh pr review`. NEVER use `--comment` — it does not register as a proper review verdict.
 
-            You MUST submit a formal review. Submit exactly ONE review, then STOP.
+            - If the change is a NET POSITIVE (even with minor nits): Run `gh pr review ${{ github.event.pull_request.number }} --approve --body "Your feedback summary"`
+            - If you found critical issues that MUST be fixed before merge: Run `gh pr review ${{ github.event.pull_request.number }} --request-changes --body "Your feedback summary"`
+
+            IMPORTANT: You MUST choose either --approve or --request-changes. There is no third option. Nits and minor suggestions go in --approve with the feedback in the body. Only use --request-changes for blocking issues (security, correctness, architecture).
+
+            Submit exactly ONE review, then STOP.
 
           claude_args: '--model claude-opus-4-6 --allowed-tools "Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr review:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh pr comment:*),Bash(gh pr checks:*)"'
 
