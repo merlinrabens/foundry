@@ -1,5 +1,5 @@
 # Claude Code Review — Portable CI Template
-# Requires: CLAUDE_CODE_OAUTH_TOKEN secret in repo settings
+# Requires: ANTHROPIC_API_KEY secret in repo settings (API key from console.anthropic.com)
 # Blocking: YES — CHANGES_REQUESTED blocks merge
 #
 # Deploy: copy to .github/workflows/claude-code-review.yml in any repo
@@ -38,7 +38,7 @@ jobs:
         id: claude-review
         uses: anthropics/claude-code-action@v1
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           track_progress: false
           allowed_bots: "claude[bot]"
           prompt: |
