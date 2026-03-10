@@ -102,6 +102,20 @@ echo "  Configured"
 # ── Install as LaunchAgent (auto-start on boot) ─────────────────────
 echo "Installing as LaunchAgent..."
 (cd "$RUNNER_DIR" && ./svc.sh install)
+
+# Patch plist: add KeepAlive + ThrottleInterval (svc.sh doesn't include these)
+# Without KeepAlive, network blips kill the runner and it never restarts.
+PLIST_FILE=$(ls ~/Library/LaunchAgents/actions.runner.*.plist 2>/dev/null | head -1)
+if [ -n "$PLIST_FILE" ] && ! grep -q "KeepAlive" "$PLIST_FILE"; then
+  echo "  Patching plist with KeepAlive..."
+  sed -i '' 's|</dict>|    <key>KeepAlive</key>\
+    <true/>\
+    <key>ThrottleInterval</key>\
+    <integer>30</integer>\
+  </dict>|' "$PLIST_FILE"
+  echo "  Added KeepAlive (auto-restart on crash, 30s throttle)"
+fi
+
 (cd "$RUNNER_DIR" && ./svc.sh start)
 
 echo ""
