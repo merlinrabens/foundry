@@ -53,10 +53,17 @@ cmd_scan() {
           local num title task_id existing
           num=$(echo "$line"   | jq -r '.number')
           title=$(echo "$line" | jq -r '.title')
-          task_id="${name}-issue-${num}"
+          local _slug
+          _slug=$(echo "$title" | head -c 40)
+          _slug=$(sanitize "$_slug")
+          task_id="${name}-${num}-${_slug}"
 
-          # Dedup: skip if a Foundry task already exists for this issue
+          # Dedup: skip if a Foundry task already exists for this issue (check both ID formats)
           existing=$(registry_get_task "$task_id" 2>/dev/null || echo "")
+          if [ -z "$existing" ] || [ "$existing" = "null" ]; then
+            # Fallback: check legacy issue-N format
+            existing=$(registry_get_task "${name}-issue-${num}" 2>/dev/null || echo "")
+          fi
           if [ -n "$existing" ] && [ "$existing" != "null" ]; then
             local sts
             sts=$(echo "$existing" | jq -r '.status // "unknown"')

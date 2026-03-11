@@ -119,9 +119,10 @@ cmd_orchestrate() {
   # Source spawn if not already loaded
   source "${FOUNDRY_DIR}/commands/spawn.bash" 2>/dev/null || true
 
-  # Build spawn args — pass --issue-number when spawning from a GitHub Issue
+  # Build spawn args — pass --issue-number and --issue-title when spawning from a GitHub Issue
   local spawn_extra_args=()
   [ -n "$issue_number" ] && spawn_extra_args+=("--issue-number" "$issue_number")
+  [ -n "$issue_title" ] && spawn_extra_args+=("--issue-title" "$issue_title")
 
   cmd_spawn "$repo_dir" "$spec_or_task" "$selected_model" "${spawn_extra_args[@]}"
   local spawn_result=$?

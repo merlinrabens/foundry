@@ -5,6 +5,7 @@ cmd_spawn() {
   # Parse flags
   local prompt_file_override=""
   local issue_number=""
+  local issue_title=""
   local create_topic=""
   local topic_id_override=""
   local positional=()
@@ -24,6 +25,14 @@ cmd_spawn() {
         ;;
       --issue-number=*)
         issue_number="${1#*=}"
+        shift
+        ;;
+      --issue-title)
+        issue_title="$2"
+        shift 2
+        ;;
+      --issue-title=*)
+        issue_title="${1#*=}"
         shift
         ;;
       --topic)
@@ -144,8 +153,17 @@ cmd_spawn() {
   fi
 
   if [ -n "$issue_number" ]; then
-    task_name="issue-${issue_number}"
-    task_id="$(sanitize "$project_name")-issue-${issue_number}"
+    # Build descriptive task ID from issue title (e.g. ad-engine-13-lp-design-overhaul)
+    if [ -n "$issue_title" ]; then
+      local _slug
+      _slug=$(echo "$issue_title" | head -c 40)
+      _slug=$(sanitize "$_slug")
+      task_name="${issue_number}-${_slug}"
+      task_id="$(sanitize "$project_name")-${issue_number}-${_slug}"
+    else
+      task_name="issue-${issue_number}"
+      task_id="$(sanitize "$project_name")-issue-${issue_number}"
+    fi
 
     # Build PR instructions
     local pr_body_instructions=""
