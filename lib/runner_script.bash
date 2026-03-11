@@ -18,7 +18,7 @@ RUNNER_EOF
   if [[ "$backend" == "claude" ]]; then
     cat >> "${worktree_dir}/.foundry-run.sh" << 'RUNNER_EOF'
 # Claude auth fallback chain (OAuth first, API key last):
-#   1. ~/.claude/.foundry-setup-token  (explicit setup token, highest priority)
+#   1. ~/.foundry/.setup-token  (explicit setup token, highest priority)
 #   2. CLAUDE_CODE_OAUTH_TOKEN env var (pre-configured OAuth)
 #   3. macOS Keychain "Claude Code-credentials" (cached from 'claude /login')
 #   4. ANTHROPIC_API_KEY env var (pay-per-use, lowest priority)
@@ -26,8 +26,8 @@ _claude_token=""
 _claude_auth_type=""
 
 # 1. Setup token file (OAuth)
-if [ -f "$HOME/.claude/.foundry-setup-token" ]; then
-  _claude_token=$(cat "$HOME/.claude/.foundry-setup-token")
+if [ -f "$HOME/.foundry/.setup-token" ]; then
+  _claude_token=$(cat "$HOME/.foundry/.setup-token")
   if [ -n "$_claude_token" ] && [ ${#_claude_token} -ge 50 ]; then
     _claude_auth_type="setup-token"
   else
@@ -63,7 +63,7 @@ if [ -z "$_claude_token" ] && [ -n "${ANTHROPIC_API_KEY:-}" ]; then
 else
   if [ -z "$_claude_token" ]; then
     echo "[foundry-runner] FATAL: No Claude auth found." >&2
-    echo "[foundry-runner] Fix: run 'claude /login' or 'claude setup-token > ~/.claude/.foundry-setup-token'" >&2
+    echo "[foundry-runner] Fix: run 'claude /login' or 'claude setup-token > ~/.foundry/.setup-token'" >&2
     exit 1
   fi
   echo "[foundry-runner] Claude auth: $_claude_auth_type" >&2

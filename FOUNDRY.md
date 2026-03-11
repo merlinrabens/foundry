@@ -630,44 +630,49 @@ The orchestrator cron (*/2h) runs `foundry check` as a **safety net** for edge c
 
 Foundry agents authenticate differently per backend:
 
-| Backend | Auth Method | Token Location |
-|---------|------------|----------------|
-| **Codex** | API key (`OPENAI_API_KEY`) | Environment variable — never expires. Sandbox: `disk-full-read-write-access` (set in `acp_orchestrator.py`) |
-| **Claude** | OAuth setup-token | `~/.claude/.foundry-setup-token` — ~1 year validity |
-| **Gemini** | API key (`GEMINI_API_KEY`) | Environment variable — never expires |
+| Backend | Primary Auth | Fallback |
+|---------|-------------|----------|
+| **Claude** | OAuth (setup-token → env → Keychain) | `ANTHROPIC_API_KEY` (pay-per-use) |
+| **Codex** | Cached sign-in (`~/.codex/auth.json`) | `OPENAI_API_KEY` (pay-per-use) |
+| **Gemini** | Cached sign-in (`~/.gemini/oauth_creds.json`) | `GOOGLE_API_KEY` (pay-per-use) |
 
-### Claude Agent Auth (Setup Token)
+All backends prefer **cached OAuth** over API keys. API keys are last-resort fallbacks only.
 
-Claude backend agents run headlessly and cannot refresh OAuth tokens interactively. The solution is a **long-lived setup-token** generated once via `claude setup-token` (~1 year validity).
+### Claude Auth Fallback Chain
 
-**One-time setup:**
+The runner script resolves Claude auth in this order:
+
+1. **`~/.foundry/.setup-token`** — long-lived setup token (~1 year), highest priority
+2. **`CLAUDE_CODE_OAUTH_TOKEN` env var** — pre-configured OAuth token
+3. **macOS Keychain** (`Claude Code-credentials`) — cached from `claude /login`
+4. **`ANTHROPIC_API_KEY` env var** — pay-per-use API key (last resort)
+
+**One-time setup** (if Keychain auth isn't available):
 
 ```bash
 claude setup-token
 # Copy the output token, then:
-echo -n "<TOKEN>" > ~/.claude/.foundry-setup-token
-chmod 600 ~/.claude/.foundry-setup-token
+echo -n "<TOKEN>" > ~/.foundry/.setup-token
+chmod 600 ~/.foundry/.setup-token
 ```
 
-**How it works:** The runner script reads `~/.claude/.foundry-setup-token` and exports it as `CLAUDE_CODE_OAUTH_TOKEN`. The claude-agent-sdk/ACP adapter uses this to authenticate with the Anthropic API.
+Or just run `claude /login` to populate the Keychain — the runner auto-detects it.
 
-**CRITICAL — Single Token Source Rule:** The claude-agent-sdk reads OAuth tokens from MULTIPLE sources (env var, `~/.claude/.credentials.json`, `~/.claude/.foundry-token`, macOS Keychain) and concatenates ALL found tokens into one Authorization header, causing "invalid header value" errors. To prevent this:
+### Codex Auth
 
-- Keep ONLY `~/.claude/.foundry-setup-token` as the token source
-- Delete `~/.claude/.foundry-token` (legacy cache, not needed)
-- Remove `claudeAiOauth` from `~/.claude/.credentials.json`
-- Overwrite Keychain entry: `security add-generic-password -s "Claude Code-credentials" -a "$USER" -w '{}' -U`
-- If interactive CLI re-creates these files, clean them again
+1. **`~/.codex/auth.json`** — cached ChatGPT sign-in (run `codex` once to sign in)
+2. **`OPENAI_API_KEY` env var** — pay-per-use fallback
 
-**CI reviews** use the same setup-token stored as `CLAUDE_CODE_OAUTH_TOKEN` GitHub secret. The `claude-code-action` handles refresh internally.
+### Gemini Auth
+
+1. **`~/.gemini/oauth_creds.json`** — cached Google sign-in (run `gemini` once to sign in)
+2. **`GOOGLE_API_KEY` env var** — pay-per-use fallback
 
 ### GitHub CLI Auth (gh)
 
-Agents use `gh`'s native keyring auth for GitHub API calls (reading reviews, PR status, etc.).
+Agents use `gh`'s native keyring auth for GitHub API calls.
 
-**CRITICAL — Do NOT bake `GH_TOKEN` or `GITHUB_TOKEN` into runner scripts.** These are short-lived GitHub Actions installation tokens (`ghs_` prefix) that expire within hours. If baked at spawn time, they override keyring auth when the agent runs later, causing `HTTP 401: Bad credentials` for all `gh` CLI calls. The `spawn.bash` and `respawn.bash` env blocks intentionally skip these vars.
-
-**Renewal:** Run `claude setup-token` again when the token approaches its ~1 year expiry.
+**Do NOT bake `GH_TOKEN` or `GITHUB_TOKEN` into runner scripts.** These are short-lived GitHub Actions tokens (`ghs_` prefix) that expire and override keyring auth. The env blocks in `spawn.bash` and `respawn.bash` intentionally skip these vars.
 
 ### Codex Sandbox Permissions
 

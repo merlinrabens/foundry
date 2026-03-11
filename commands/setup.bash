@@ -143,7 +143,7 @@ cmd_setup() {
     _info "Claude Code: $claude_path"
     summary_agents=$((summary_agents + 1))
     # OAuth sources first (subscription), API key last (pay-per-use)
-    if [ -f "$HOME/.claude/.foundry-setup-token" ]; then
+    if [ -f "$HOME/.foundry/.setup-token" ]; then
       _info "Claude auth: setup token configured"
     elif [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
       _info "Claude auth: OAuth token in environment"
@@ -164,10 +164,9 @@ cmd_setup() {
           export ANTHROPIC_API_KEY="$claude_token"
           _info "Saved API key to config.local.env"
         else
-          mkdir -p "$HOME/.claude"
-          echo -n "$claude_token" > "$HOME/.claude/.foundry-setup-token"
-          chmod 600 "$HOME/.claude/.foundry-setup-token"
-          _info "Saved setup token to ~/.claude/.foundry-setup-token"
+          echo -n "$claude_token" > "$HOME/.foundry/.setup-token"
+          chmod 600 "$HOME/.foundry/.setup-token"
+          _info "Saved setup token to ~/.foundry/.setup-token"
         fi
       fi
     fi
