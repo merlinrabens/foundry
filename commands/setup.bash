@@ -146,17 +146,25 @@ cmd_setup() {
       _info "Claude setup token: configured"
     elif [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
       _info "Claude OAuth token: already in environment"
+    elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+      _info "Anthropic API key: set"
     else
-      _warn "Claude setup token: not found"
-      echo "       Claude uses OAuth (not an API key). Run 'claude setup-token' in a"
-      echo "       separate terminal — it prints a long-lived token you paste here."
-      _ask "Token (or Enter to skip):"
+      _warn "Claude: not authenticated"
+      echo "       Option A: Run 'claude setup-token' in a separate terminal (uses subscription)"
+      echo "       Option B: Paste an Anthropic API key (https://console.anthropic.com/)"
+      _ask "Setup token or API key (or Enter to skip):"
       read -r claude_token
       if [ -n "$claude_token" ]; then
-        mkdir -p "$HOME/.claude"
-        echo -n "$claude_token" > "$HOME/.claude/.foundry-setup-token"
-        chmod 600 "$HOME/.claude/.foundry-setup-token"
-        _info "Saved to ~/.claude/.foundry-setup-token"
+        if [[ "$claude_token" == sk-ant-api* ]]; then
+          _set_config_var "ANTHROPIC_API_KEY" "$claude_token"
+          export ANTHROPIC_API_KEY="$claude_token"
+          _info "Saved API key to config.local.env"
+        else
+          mkdir -p "$HOME/.claude"
+          echo -n "$claude_token" > "$HOME/.claude/.foundry-setup-token"
+          chmod 600 "$HOME/.claude/.foundry-setup-token"
+          _info "Saved setup token to ~/.claude/.foundry-setup-token"
+        fi
       fi
     fi
   else
