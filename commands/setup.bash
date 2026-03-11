@@ -144,9 +144,13 @@ cmd_setup() {
     summary_agents=$((summary_agents + 1))
     if [ -f "$HOME/.claude/.foundry-setup-token" ]; then
       _info "Claude setup token: configured"
+    elif [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+      _info "Claude OAuth token: already in environment"
     else
       _warn "Claude setup token: not found"
-      _ask "Generate one now? Run 'claude setup-token' and paste the token:"
+      echo "       Claude uses OAuth (not an API key). Run 'claude setup-token' in a"
+      echo "       separate terminal — it prints a long-lived token you paste here."
+      _ask "Token (or Enter to skip):"
       read -r claude_token
       if [ -n "$claude_token" ]; then
         mkdir -p "$HOME/.claude"
@@ -166,9 +170,13 @@ cmd_setup() {
     summary_agents=$((summary_agents + 1))
     if [ -n "${OPENAI_API_KEY:-}" ]; then
       _info "OpenAI API key: set"
+    elif [ -f "$HOME/.codex/auth.json" ]; then
+      _info "Codex ChatGPT sign-in: cached"
     else
-      _warn "OpenAI API key: not set"
-      _ask "Paste your OpenAI API key (or press Enter to skip):"
+      _warn "Codex: not authenticated"
+      echo "       Option A: Run 'codex' interactively to sign in via ChatGPT (uses subscription)"
+      echo "       Option B: Paste an API key for pay-per-use billing"
+      _ask "API key (https://platform.openai.com/api-keys) or Enter to skip:"
       read -r openai_key
       if [ -n "$openai_key" ]; then
         _set_config_var "OPENAI_API_KEY" "$openai_key"
@@ -185,15 +193,15 @@ cmd_setup() {
   if command -v gemini >/dev/null 2>&1; then
     _info "Gemini CLI: $(command -v gemini)"
     summary_agents=$((summary_agents + 1))
-    if [ -n "${GEMINI_API_KEY:-}" ]; then
-      _info "Gemini API key: set"
+    if [ -n "${GOOGLE_API_KEY:-}" ]; then
+      _info "Google API key: set"
     else
-      _warn "Gemini API key: not set"
-      _ask "Paste your Gemini API key (or press Enter to skip):"
+      _warn "Google API key: not set"
+      _ask "Paste your Gemini API key (https://aistudio.google.com/apikey) or Enter to skip:"
       read -r gemini_key
       if [ -n "$gemini_key" ]; then
-        _set_config_var "GEMINI_API_KEY" "$gemini_key"
-        export GEMINI_API_KEY="$gemini_key"
+        _set_config_var "GOOGLE_API_KEY" "$gemini_key"
+        export GOOGLE_API_KEY="$gemini_key"
         _info "Saved to config.local.env"
       fi
     fi
