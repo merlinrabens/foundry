@@ -195,9 +195,13 @@ cmd_setup() {
     summary_agents=$((summary_agents + 1))
     if [ -n "${GOOGLE_API_KEY:-}" ]; then
       _info "Google API key: set"
+    elif [ -f "$HOME/.gemini/oauth_creds.json" ]; then
+      _info "Gemini Google sign-in: cached"
     else
-      _warn "Google API key: not set"
-      _ask "Paste your Gemini API key (https://aistudio.google.com/apikey) or Enter to skip:"
+      _warn "Gemini: not authenticated"
+      echo "       Option A: Run 'gemini' interactively to sign in with Google (uses subscription)"
+      echo "       Option B: Paste an API key for free-tier usage"
+      _ask "API key (https://aistudio.google.com/apikey) or Enter to skip:"
       read -r gemini_key
       if [ -n "$gemini_key" ]; then
         _set_config_var "GOOGLE_API_KEY" "$gemini_key"
