@@ -293,10 +293,14 @@ ${pr_body_instructions}"
   fi
 
   # ── Build env block (snapshot critical vars for agent process) ──
+  # Auth: All 3 backends use cached OAuth sign-in by default.
+  #   Claude: runner_script.bash handles auth fallback chain
+  #   Codex:  uses ~/.codex/auth.json (ChatGPT sign-in)
+  #   Gemini: uses ~/.gemini/oauth_creds.json (Google sign-in)
+  # API keys (OPENAI_API_KEY, GOOGLE_API_KEY) are NOT baked — they override
+  # OAuth and cause pay-per-use billing. Only pass them if explicitly configured
+  # in config.local.env (user opted in).
   local env_block=""
-  [ -n "${OPENAI_API_KEY:-}" ]             && env_block+="export OPENAI_API_KEY='${OPENAI_API_KEY}'"$'\n'
-  # Claude OAuth token is refreshed at launch time in runner_script.bash (not baked here)
-  [ -n "${GOOGLE_API_KEY:-}" ]             && env_block+="export GOOGLE_API_KEY='${GOOGLE_API_KEY}'"$'\n'
   [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ]   && env_block+="export OP_SERVICE_ACCOUNT_TOKEN='${OP_SERVICE_ACCOUNT_TOKEN}'"$'\n'
   # NOTE: Do NOT bake GH_TOKEN or GITHUB_TOKEN — they are short-lived
   # GitHub Actions installation tokens (ghs_) that expire and then override

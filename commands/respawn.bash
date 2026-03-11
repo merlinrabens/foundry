@@ -97,9 +97,7 @@ cmd_respawn() {
   # ── Always regenerate runner script (ensures fresh token refresh + template fixes) ──
   log "Regenerating runner script..."
   local env_block=""
-  [ -n "${OPENAI_API_KEY:-}" ]             && env_block+="export OPENAI_API_KEY='${OPENAI_API_KEY}'"$'\n'
-  # Claude OAuth token is refreshed at launch time in runner_script.bash (not baked here)
-  [ -n "${GOOGLE_API_KEY:-}" ]             && env_block+="export GOOGLE_API_KEY='${GOOGLE_API_KEY}'"$'\n'
+  # Auth: backends use cached OAuth sign-in. API keys NOT baked (would override OAuth).
   [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ]   && env_block+="export OP_SERVICE_ACCOUNT_TOKEN='${OP_SERVICE_ACCOUNT_TOKEN}'"$'\n'
   # NOTE: Do NOT bake GH_TOKEN or GITHUB_TOKEN — they are short-lived
   # GitHub Actions installation tokens (ghs_) that expire and then override
