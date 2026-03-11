@@ -68,6 +68,7 @@ case "$cmd" in
   register)           source "${FOUNDRY_DIR}/commands/register.bash";  cmd_register "$@" ;;
   nudge)              source "${FOUNDRY_DIR}/commands/nudge.bash";     cmd_nudge "$@" ;;
   setup)              source "${FOUNDRY_DIR}/commands/setup.bash";     cmd_setup "$@" ;;
+  update)             source "${FOUNDRY_DIR}/commands/update.bash";    cmd_update "$@" ;;
   diagnose|diag)      source "${FOUNDRY_DIR}/commands/diagnose.bash";  cmd_diagnose "$@" ;;
   help|-h|--help)     source "${FOUNDRY_DIR}/commands/help.bash";      cmd_help "$@" ;;
   *)                  source "${FOUNDRY_DIR}/commands/help.bash";      cmd_help "$@" ;;

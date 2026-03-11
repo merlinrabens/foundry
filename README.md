@@ -344,6 +344,7 @@ foundry peek <task-id>                View agent's last output
 foundry nudge <task-id>               Unstick a stalled agent
 foundry design <repo> <spec> [agent]  Gemini-first design pipeline
 foundry recommend <spec>              Suggest best agent for task
+foundry update                        Self-update from upstream
 ```
 
 ## Self-Hosted Runner (Event-Driven, The Real Killer)

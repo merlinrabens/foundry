@@ -249,6 +249,24 @@ if ! $in_path; then
   export PATH="$FOUNDRY_HOME:$PATH"
 fi
 
+# ─── OpenClaw Integration ─────────────────────────────────────────────
+OC_SKILLS="$HOME/.openclaw/workspace/skills"
+if [ -d "$OC_SKILLS" ]; then
+  step "Detected OpenClaw — linking skill..."
+  OC_TARGET="$OC_SKILLS/foundry"
+  OC_SOURCE="$FOUNDRY_HOME/openclaw"
+
+  if [ -L "$OC_TARGET" ]; then
+    rm -f "$OC_TARGET"
+  elif [ -d "$OC_TARGET" ]; then
+    mv "$OC_TARGET" "${OC_TARGET}.bak.$(date +%s)"
+    warn "Backed up old skill directory"
+  fi
+
+  ln -s "$OC_SOURCE" "$OC_TARGET"
+  info "Linked OpenClaw skill: foundry -> $OC_SOURCE"
+fi
+
 # ─── Detect Agents ──────────────────────────────────────────────────
 echo ""
 printf "  ${BOLD}Agents:${RESET}\n"

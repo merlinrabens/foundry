@@ -24,6 +24,7 @@ COMMANDS
   scan                              Find specs across known projects
   recommend <spec|task>             Suggest best model for a task
   queue                             Show priority-scored spec backlog
+  update                            Self-update from upstream repo
 
 EXAMPLES
   foundry spawn ~/projects/aura-shopify specs/backlog/05-dashboard.md

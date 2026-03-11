@@ -84,6 +84,7 @@ commands/                 One file per command (16 files, ~2000 lines)
   scan.bash                 cmd_scan
   register.bash             cmd_register
   diagnose.bash             cmd_diagnose (self-repair diagnostics)
+  update.bash               cmd_update (self-update from upstream)
   help.bash                 cmd_help
 check-agents.sh           Zero-token health monitor (standalone, cron fallback)
 foundry.db                SQLite registry — single source of truth
@@ -546,6 +547,7 @@ foundry queue                                     # Priority-scored spec backlog
 # ─── Operations ────────────────────────────────────────────────────────
 foundry auto                                      # Auto-spawn from priority queue
 foundry cleanup                                   # Archive completed, move specs to done/, remove worktrees
+foundry update                                    # Self-update from upstream repo
 
 # ─── Zero-Token Monitor (standalone) ──────────────────────────────────
 foundry check                                   # Full check with Telegram notifications
