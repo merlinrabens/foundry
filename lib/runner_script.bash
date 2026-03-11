@@ -14,27 +14,62 @@ _write_runner_script() {
 unset CLAUDECODE
 RUNNER_EOF
 
-  # Only add OAuth token resolution for Claude backend (Codex/Gemini use API keys)
+  # Only add OAuth token resolution for Claude backend (Codex/Gemini use cached sign-in)
   if [[ "$backend" == "claude" ]]; then
     cat >> "${worktree_dir}/.foundry-run.sh" << 'RUNNER_EOF'
-# Claude auth: read setup-token and set CLAUDE_CODE_OAUTH_TOKEN.
-# IMPORTANT: Use ONLY .foundry-setup-token as the single token source.
-# The SDK's multi-source resolver concatenates tokens from credentials.json +
-# .foundry-token + Keychain into one invalid Authorization header.
-# Keeping only setup-token prevents this (Single Token Source Rule).
-_token_file="$HOME/.claude/.foundry-setup-token"
-if [ ! -f "$_token_file" ]; then
-  echo "[foundry-runner] FATAL: No setup-token at $_token_file" >&2
-  echo "[foundry-runner] Run: claude setup-token > ~/.claude/.foundry-setup-token" >&2
-  exit 1
+# Claude auth fallback chain (OAuth first, API key last):
+#   1. ~/.claude/.foundry-setup-token  (explicit setup token, highest priority)
+#   2. CLAUDE_CODE_OAUTH_TOKEN env var (pre-configured OAuth)
+#   3. macOS Keychain "Claude Code-credentials" (cached from 'claude /login')
+#   4. ANTHROPIC_API_KEY env var (pay-per-use, lowest priority)
+_claude_token=""
+_claude_auth_type=""
+
+# 1. Setup token file (OAuth)
+if [ -f "$HOME/.claude/.foundry-setup-token" ]; then
+  _claude_token=$(cat "$HOME/.claude/.foundry-setup-token")
+  if [ -n "$_claude_token" ] && [ ${#_claude_token} -ge 50 ]; then
+    _claude_auth_type="setup-token"
+  else
+    _claude_token=""
+  fi
 fi
-_token=$(cat "$_token_file")
-if [ -z "$_token" ] || [ ${#_token} -lt 50 ]; then
-  echo "[foundry-runner] FATAL: Setup-token too short or empty" >&2
-  exit 1
+
+# 2. Env var OAuth token
+if [ -z "$_claude_token" ] && [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+  _claude_token="$CLAUDE_CODE_OAUTH_TOKEN"
+  _claude_auth_type="env:CLAUDE_CODE_OAUTH_TOKEN"
 fi
-export CLAUDE_CODE_OAUTH_TOKEN="$_token"
-unset _token _token_file
+
+# 3. macOS Keychain (OAuth)
+if [ -z "$_claude_token" ] && command -v security >/dev/null 2>&1; then
+  _keychain_json=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null || echo "")
+  if [ -n "$_keychain_json" ]; then
+    _claude_token=$(echo "$_keychain_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('claudeAiOauth',{}).get('accessToken',''))" 2>/dev/null || echo "")
+    if [ -n "$_claude_token" ]; then
+      _claude_auth_type="Keychain"
+    fi
+  fi
+  unset _keychain_json
+fi
+
+# 4. API key (pay-per-use, last resort)
+if [ -z "$_claude_token" ] && [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+  export ANTHROPIC_API_KEY
+  _claude_auth_type="env:ANTHROPIC_API_KEY (pay-per-use)"
+  echo "[foundry-runner] Claude auth: $_claude_auth_type" >&2
+  unset _claude_auth_type
+  # Skip CLAUDE_CODE_OAUTH_TOKEN export — claude-agent-acp reads ANTHROPIC_API_KEY directly
+else
+  if [ -z "$_claude_token" ]; then
+    echo "[foundry-runner] FATAL: No Claude auth found." >&2
+    echo "[foundry-runner] Fix: run 'claude /login' or 'claude setup-token > ~/.claude/.foundry-setup-token'" >&2
+    exit 1
+  fi
+  echo "[foundry-runner] Claude auth: $_claude_auth_type" >&2
+  export CLAUDE_CODE_OAUTH_TOKEN="$_claude_token"
+fi
+unset _claude_token _claude_auth_type
 RUNNER_EOF
   fi
   # Switch to non-quoted heredoc for variable expansion in env block + paths

@@ -142,16 +142,20 @@ cmd_setup() {
     local claude_path; claude_path=$(command -v claude)
     _info "Claude Code: $claude_path"
     summary_agents=$((summary_agents + 1))
+    # OAuth sources first (subscription), API key last (pay-per-use)
     if [ -f "$HOME/.claude/.foundry-setup-token" ]; then
-      _info "Claude setup token: configured"
+      _info "Claude auth: setup token configured"
     elif [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
-      _info "Claude OAuth token: already in environment"
+      _info "Claude auth: OAuth token in environment"
+    elif command -v security >/dev/null 2>&1 && security find-generic-password -s "Claude Code-credentials" -w >/dev/null 2>&1; then
+      _info "Claude auth: signed in (Keychain)"
     elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-      _info "Anthropic API key: set"
+      _info "Claude auth: API key set (pay-per-use)"
     else
       _warn "Claude: not authenticated"
-      echo "       Option A: Run 'claude setup-token' in a separate terminal (uses subscription)"
-      echo "       Option B: Paste an Anthropic API key (https://console.anthropic.com/)"
+      echo "       Option A: Run 'claude /login' to sign in (uses subscription)"
+      echo "       Option B: Run 'claude setup-token' to create a dedicated agent token"
+      echo "       Option C: Paste an Anthropic API key (https://console.anthropic.com/)"
       _ask "Setup token or API key (or Enter to skip):"
       read -r claude_token
       if [ -n "$claude_token" ]; then
