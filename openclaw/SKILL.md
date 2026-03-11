@@ -60,8 +60,8 @@ Set `OPENCLAW_TG_BOT_TOKEN` and `TELEGRAM_CHAT_ID` env vars for Telegram notific
 
 ## Setup
 
-1. Clone: `git clone https://github.com/merlinrabens/foundry.git`
-2. Add to PATH: `export PATH="$HOME/foundry:$PATH"`
-3. Configure: `cp config.env config.local.env` and edit
-4. Test: `bats tests/`
-5. Add cron jobs to OpenClaw config
+1. Install: `curl -fsSL https://raw.githubusercontent.com/merlinrabens/foundry/main/install.sh | bash`
+2. Configure: `foundry setup` (interactive wizard — detects CLIs, checks OAuth sign-in)
+3. Test: `bats tests/`
+4. Add cron jobs to OpenClaw config
+5. Update: `foundry update`

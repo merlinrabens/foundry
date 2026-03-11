@@ -28,7 +28,7 @@ Three-backend coding agent system with OpenClaw as orchestrator. Spawns isolated
 │  │  ┌─────────┐  ┌─────────┐  ┌─────────┐                       │ │
 │  │  │ Codex   │  │ Claude  │  │ Gemini  │  ← Foundry picks one    │ │
 │  │  │codex-acp│  │claude-  │  │gemini   │    via smart routing   │ │
-│  │  │         │  │agent-acp│  │ --acp   │                        │ │
+│  │  │         │  │agent-acp│  │ --exp.  │                        │ │
 │  │  └────┬────┘  └────┬────┘  └────┬────┘                       │ │
 │  │       │            │            │                             │ │
 │  │       ▼            ▼            ▼                             │ │
@@ -559,7 +559,7 @@ Six workflow templates deployable to any repo via `deploy-ci.sh`.
 | `visual-evidence.yml` | Playwright video screencasts + FFmpeg | PR opened, synchronize |
 | **`foundry-gate.yml`** | **Event-driven bridge → local `foundry check`** | **workflow_run completed, review submitted, PR closed/labeled** |
 
-**Required secrets:** `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`
+**Required secrets (CI only):** `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`
 **Required app:** Gemini Code Assist (free, GitHub Marketplace)
 
 ### Foundry Gate (Event-Driven Check)

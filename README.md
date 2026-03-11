@@ -294,10 +294,10 @@ That's it. The installer handles cloning, PATH, prerequisites, and database setu
 
 - macOS or Linux
 - [GitHub CLI](https://cli.github.com/) (`gh`) — authenticated (`gh auth login`)
-- At least one AI agent:
-  - [Claude Code](https://docs.anthropic.com/en/docs/claude-code): `npm i -g @anthropic-ai/claude-code`
-  - [Codex](https://github.com/openai/codex): `npm i -g @openai/codex` + `OPENAI_API_KEY`
-  - [Gemini](https://github.com/google-gemini/gemini-cli): `npm i -g @google/gemini-cli` + `GOOGLE_API_KEY`
+- At least one AI agent (sign in via each CLI for OAuth, or set API key as fallback):
+  - [Claude Code](https://docs.anthropic.com/en/docs/claude-code): `npm i -g @anthropic-ai/claude-code` + `claude /login`
+  - [Codex](https://github.com/openai/codex): `npm i -g @openai/codex` + run `codex` to sign in
+  - [Gemini](https://github.com/google-gemini/gemini-cli): `npm i -g @google/gemini-cli` + run `gemini` to sign in
 - SQLite3, jq (installer checks for these)
 
 ## Setup Guide
@@ -306,7 +306,7 @@ That's it. The installer handles cloning, PATH, prerequisites, and database setu
 
 1. **Repos** — which repos Foundry should manage
 2. **AGENTS.md** — generates config file in repos that need one
-3. **Agents** — detects installed CLIs, checks API keys
+3. **Agents** — detects installed CLIs, checks OAuth sign-in status
 4. **Telegram** — optional notifications (bot token + chat ID)
 5. **CI workflows** — deploys review workflows to your repos
 6. **Database** — creates the SQLite registry
@@ -317,8 +317,8 @@ Each repo that uses Foundry's CI review workflows needs these secrets (Settings 
 
 | Secret | Required | Used By |
 |---|---|---|
-| `CLAUDE_CODE_OAUTH_TOKEN` | Yes | Claude Code Review |
-| `OPENAI_API_KEY` | If using Codex | Codex Review |
+| `CLAUDE_CODE_OAUTH_TOKEN` | Yes | Claude Code Review (CI) |
+| `OPENAI_API_KEY` | If using Codex review | Codex Review (CI) |
 | `TELEGRAM_BOT_TOKEN` | Optional | Notifications |
 | `TELEGRAM_CHAT_ID` | Optional | Notifications |
 

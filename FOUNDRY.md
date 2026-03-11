@@ -733,7 +733,7 @@ All tunables in `config.env`:
 
 ```bash
 # Run all tests
-cd ~/.openclaw/workspace/scripts/foundry && bats tests/
+cd ~/.foundry && bats tests/
 
 # Run a specific test file
 bats tests/test_state_machine.bats
