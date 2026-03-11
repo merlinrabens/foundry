@@ -22,6 +22,7 @@ jobs:
       vars.DISABLE_CODEX_REVIEW != 'true'
     permissions:
       contents: read
+      pull-requests: read
     outputs:
       final_message: ${{ steps.run_codex.outputs.final-message }}
     steps:
@@ -30,6 +31,13 @@ jobs:
           ref: refs/pull/${{ github.event.pull_request.number }}/merge
           fetch-depth: 0
 
+      - name: Generate PR diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr-diff.patch
+          echo "Diff size: $(wc -l < /tmp/pr-diff.patch) lines"
+
       - name: Run Codex Code Review
         id: run_codex
         uses: openai/codex-action@v1
@@ -37,16 +45,18 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           prompt: |
             This is PR #${{ github.event.pull_request.number }} for ${{ github.repository }}.
-
-            Review ONLY the changes introduced by this PR:
-              git log --oneline ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
-
-            Focus on edge cases, logic errors, missing error handling,
-            race conditions, and security vulnerabilities.
-
-            Be thorough but concise. Focus on real bugs, not style.
-
             PR title: ${{ github.event.pull_request.title }}
+
+            The diff of ALL changes in this PR is saved to /tmp/pr-diff.patch.
+            Read that file to see EXACTLY what changed.
+
+            RULES:
+            - ONLY review code that appears in the diff. Do NOT explore
+              or comment on existing code outside the diff.
+            - Focus on: edge cases, logic errors, missing error handling,
+              race conditions, and security vulnerabilities.
+            - Do NOT flag style, formatting, or theoretical concerns.
+            - Be thorough but concise. Real bugs only.
 
             IMPORTANT: End your review with EXACTLY one of these lines:
             - VERDICT: CLEAN (no issues found)
