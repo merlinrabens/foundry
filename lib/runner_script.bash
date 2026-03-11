@@ -72,6 +72,43 @@ fi
 unset _claude_token _claude_auth_type
 RUNNER_EOF
   fi
+
+  # Codex auth: cached sign-in first, API key fallback
+  if [[ "$backend" == "codex" ]]; then
+    cat >> "${worktree_dir}/.foundry-run.sh" << 'RUNNER_EOF'
+# Codex auth (OAuth first, API key fallback):
+#   1. ~/.codex/auth.json (cached ChatGPT sign-in)
+#   2. OPENAI_API_KEY env var (pay-per-use)
+if [ -f "$HOME/.codex/auth.json" ]; then
+  echo "[foundry-runner] Codex auth: cached sign-in" >&2
+elif [ -n "${OPENAI_API_KEY:-}" ]; then
+  echo "[foundry-runner] Codex auth: OPENAI_API_KEY (pay-per-use)" >&2
+else
+  echo "[foundry-runner] FATAL: No Codex auth found." >&2
+  echo "[foundry-runner] Fix: run 'codex' to sign in, or export OPENAI_API_KEY" >&2
+  exit 1
+fi
+RUNNER_EOF
+  fi
+
+  # Gemini auth: cached sign-in first, API key fallback
+  if [[ "$backend" == "gemini" ]]; then
+    cat >> "${worktree_dir}/.foundry-run.sh" << 'RUNNER_EOF'
+# Gemini auth (OAuth first, API key fallback):
+#   1. ~/.gemini/oauth_creds.json (cached Google sign-in)
+#   2. GOOGLE_API_KEY env var (pay-per-use)
+if [ -f "$HOME/.gemini/oauth_creds.json" ]; then
+  echo "[foundry-runner] Gemini auth: cached sign-in" >&2
+elif [ -n "${GOOGLE_API_KEY:-}" ]; then
+  echo "[foundry-runner] Gemini auth: GOOGLE_API_KEY (pay-per-use)" >&2
+else
+  echo "[foundry-runner] FATAL: No Gemini auth found." >&2
+  echo "[foundry-runner] Fix: run 'gemini' to sign in, or export GOOGLE_API_KEY" >&2
+  exit 1
+fi
+RUNNER_EOF
+  fi
+
   # Switch to non-quoted heredoc for variable expansion in env block + paths
   cat >> "${worktree_dir}/.foundry-run.sh" << RUNNER_EOF
 ${env_block}
