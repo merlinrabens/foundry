@@ -142,6 +142,19 @@ cmd_setup() {
     local claude_path; claude_path=$(command -v claude)
     _info "Claude Code: $claude_path"
     summary_agents=$((summary_agents + 1))
+    if [ -f "$HOME/.claude/.foundry-setup-token" ]; then
+      _info "Claude setup token: configured"
+    else
+      _warn "Claude setup token: not found"
+      _ask "Generate one now? Run 'claude setup-token' and paste the token:"
+      read -r claude_token
+      if [ -n "$claude_token" ]; then
+        mkdir -p "$HOME/.claude"
+        echo -n "$claude_token" > "$HOME/.claude/.foundry-setup-token"
+        chmod 600 "$HOME/.claude/.foundry-setup-token"
+        _info "Saved to ~/.claude/.foundry-setup-token"
+      fi
+    fi
   else
     _warn "Claude Code: not installed"
     printf "       Install: ${DIM}npm i -g @anthropic-ai/claude-code${RESET}\n"
@@ -155,7 +168,13 @@ cmd_setup() {
       _info "OpenAI API key: set"
     else
       _warn "OpenAI API key: not set"
-      printf "       ${DIM}export OPENAI_API_KEY=sk-...${RESET}\n"
+      _ask "Paste your OpenAI API key (or press Enter to skip):"
+      read -r openai_key
+      if [ -n "$openai_key" ]; then
+        _set_config_var "OPENAI_API_KEY" "$openai_key"
+        export OPENAI_API_KEY="$openai_key"
+        _info "Saved to config.local.env"
+      fi
     fi
   else
     _warn "Codex CLI: not installed"
@@ -166,11 +185,17 @@ cmd_setup() {
   if command -v gemini >/dev/null 2>&1; then
     _info "Gemini CLI: $(command -v gemini)"
     summary_agents=$((summary_agents + 1))
-    if [ -n "${GOOGLE_API_KEY:-}" ]; then
-      _info "Google API key: set"
+    if [ -n "${GEMINI_API_KEY:-}" ]; then
+      _info "Gemini API key: set"
     else
-      _warn "Google API key: not set"
-      printf "       ${DIM}export GOOGLE_API_KEY=AIza...${RESET}\n"
+      _warn "Gemini API key: not set"
+      _ask "Paste your Gemini API key (or press Enter to skip):"
+      read -r gemini_key
+      if [ -n "$gemini_key" ]; then
+        _set_config_var "GEMINI_API_KEY" "$gemini_key"
+        export GEMINI_API_KEY="$gemini_key"
+        _info "Saved to config.local.env"
+      fi
     fi
   else
     _warn "Gemini CLI: not installed"
@@ -378,6 +403,19 @@ Drop a markdown spec in `specs/backlog/` and run `foundry orchestrate` to auto-s
 ### Issue-based workflow
 Label any GitHub Issue with `foundry` and it will be picked up by `foundry scan`.
 AGENTSMD
+}
+
+# ─── Set a config variable in config.local.env ──────────────────────
+_set_config_var() {
+  local key="$1" value="$2"
+  local config_file="${FOUNDRY_DIR}/config.local.env"
+  # Remove existing line if present
+  if grep -q "^export ${key}=" "$config_file" 2>/dev/null; then
+    local tmp; tmp=$(mktemp)
+    grep -v "^export ${key}=" "$config_file" > "$tmp"
+    mv "$tmp" "$config_file"
+  fi
+  echo "export ${key}=\"${value}\"" >> "$config_file"
 }
 
 # ─── Non-interactive validation ──────────────────────────────────────

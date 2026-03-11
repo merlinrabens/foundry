@@ -21,6 +21,7 @@ unset _SCRIPT _DIR
 
 # Source config + infrastructure
 source "${FOUNDRY_DIR}/config.env"
+[ -f "${FOUNDRY_DIR}/config.local.env" ] && source "${FOUNDRY_DIR}/config.local.env"
 
 # Source core modules (skip registry.bash if using SQLite)
 for f in "${FOUNDRY_DIR}/core/"*.bash; do
