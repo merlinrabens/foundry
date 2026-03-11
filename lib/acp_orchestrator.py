@@ -48,7 +48,7 @@ def get_adapter_args(backend: str, model: str, worktree: str) -> list[str]:
                 "-c", 'sandbox_mode="danger-full-access"',
             ]
         case "gemini":
-            return [ACP_ADAPTERS["gemini"], "--acp", "--model", model]
+            return [ACP_ADAPTERS["gemini"], "--experimental-acp", "--model", model]
         case _:  # claude
             return [ACP_ADAPTERS["claude"], "--model", model]
 
