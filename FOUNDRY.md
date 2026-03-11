@@ -421,36 +421,6 @@ Auto-merge requirements (all must be true):
 
 ---
 
-## Linear Integration (Optional)
-
-When enabled, Foundry automatically injects Linear issue identifiers into PR descriptions so stakeholders can track progress on a Linear board without any manual work.
-
-**How it works:**
-- Foundry maps GitHub repos to Linear team prefixes (e.g. `Huklberry/lead-gen` -> `HUK`)
-- For issue-based tasks, the PR title gets the Linear ID and the body gets both closing keywords:
-  ```
-  Title: HUK-5: issue-5
-  Body:
-  fixes HUK-5    <- Linear: links PR
-  fixes #5       <- GitHub: auto-closes the issue on merge
-  ```
-- Linear recognizes the ID in the PR title and automatically tracks status:
-  - PR opened -> In Progress
-  - PR merged -> Done
-- Foundry never calls the Linear API. It's a static prefix lookup, nothing more.
-
-**Setup:**
-```bash
-# config.env
-LINEAR_INTEGRATION=true
-LINEAR_PREFIX_MAP='{
-  "Huklberry/lead-gen": "HUK",
-  "primal-meat-club/aura-shopify": "PRI"
-}'
-```
-
-Repos not in the map are unaffected. When disabled (default), Foundry behaves exactly as before.
-
 ---
 
 ## Visual Evidence
@@ -717,8 +687,6 @@ All tunables in `config.env`:
 | `AUTO_MERGE_LOW_RISK` | `false` | Auto-merge LOW risk PRs |
 | `STALE_THRESHOLD_SECS` | `7200` | Flag agents running >2h without PR |
 | `IDLE_THRESHOLD_SECS` | `1800` | Flag agents idle >30min with zero changes |
-| `LINEAR_INTEGRATION` | `false` | Enable Linear identifier injection in PRs |
-| `LINEAR_PREFIX_MAP` | `{}` | JSON map of `"owner/repo"` to Linear team prefix |
 
 ---
 

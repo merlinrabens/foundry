@@ -70,7 +70,7 @@ Creates git worktree + branch
     ↓
 Spawns agent with the spec as context
     ↓
-Agent writes code, opens PR (with Linear ID in title when Linear enabled, or `fixes #N` in body otherwise)
+Agent writes code, opens PR (with `fixes #N` in body)
     ↓
 3 AI reviewers review independently
     ↓
@@ -78,7 +78,7 @@ Agent reads ALL reviews, pushes fixes in one cycle
     ↓
 CI passes + all reviewers approve = ready to merge
     ↓
-PR merges → Issue auto-closes → Linear board updates
+PR merges → Issue auto-closes
 ```
 
 ### Spawning an Agent
@@ -244,32 +244,6 @@ Done.
 Foundry works perfectly standalone. Cron jobs + local agents + GitHub. OpenClaw is the upgrade path when you want remote control, push notifications, and multi-machine scaling.
 
 ---
-
-## Linear Integration (Optional)
-
-Foundry never calls the Linear API. It uses GitHub as the bridge:
-
-1. Linear syncs with GitHub Issues bi-directionally (via GitHub App)
-2. Foundry builds from GitHub Issues
-3. When `LINEAR_INTEGRATION=true`, Foundry puts the Linear ID in the PR title (e.g. `ENG-5: issue-5`)
-4. Linear recognizes its identifier in the PR title and automatically tracks: In Progress (PR opened), Done (PR merged)
-5. On merge, Linear auto-closes both the Linear issue AND the synced GitHub issue. No `fixes #N` needed in the body.
-
-**Setup:**
-```bash
-# 1. Linear Settings > Integrations > GitHub > Enable (10 minutes)
-
-# 2. config.env
-LINEAR_INTEGRATION=true
-LINEAR_PREFIX_MAP='{
-  "myorg/my-repo": "ENG",
-  "myorg/design-system": "DES"
-}'
-```
-
-Repos not in the map are unaffected. When disabled (default), PRs include `fixes #N` for GitHub issue closing.
-
-Your stakeholders see a board. They don't know about Foundry. They see "Done."
 
 ---
 
