@@ -149,6 +149,21 @@ cmd_spawn() {
       task_id="$(sanitize "$project_name")-issue-${issue_number}"
     fi
 
+    # Fetch the GitHub Issue body + comments as spec content
+    local _remote_url _repo_nwo _issue_body _issue_comments
+    _remote_url=$(cd "$repo_dir" && git remote get-url origin 2>/dev/null || echo "")
+    _repo_nwo=$(echo "$_remote_url" | sed -E 's|\.git$||' | sed -E 's|^.*://[^/]+/||; s|^[^:]+:||')
+    if [ -n "$_repo_nwo" ]; then
+      _issue_body=$(gh issue view "$issue_number" -R "$_repo_nwo" --json title,body --jq '"# " + .title + "\n\n" + .body' 2>/dev/null || echo "")
+      _issue_comments=$(gh issue view "$issue_number" -R "$_repo_nwo" --json comments --jq '[.comments[] | select(.body | length > 10) | "---\n**Comment:**\n" + .body] | join("\n\n")' 2>/dev/null || echo "")
+      if [ -n "$_issue_body" ]; then
+        task_content="$_issue_body"
+        [ -n "$_issue_comments" ] && task_content="${task_content}
+
+${_issue_comments}"
+      fi
+    fi
+
     # Build PR instructions
     local pr_body_instructions="- The PR description body MUST include: \`fixes #${issue_number}\`
 - This auto-closes the GitHub Issue on merge."

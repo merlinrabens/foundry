@@ -205,15 +205,8 @@ cmd_respawn() {
       "checks.agentAlive=true"
   fi
 
-  # Store respawnContext (as escaped JSON string)
-  # Use a temp file to safely write the JSON
-  local tmp_reg
-  tmp_reg=$(mktemp)
-  _registry_lock
-  cat "$REGISTRY" | jq --arg id "$task_id" --argjson ctx "$respawn_context" \
-    '(.[] | select(.id == $id)).respawnContext = $ctx' > "$tmp_reg"
-  mv "$tmp_reg" "$REGISTRY"
-  _registry_unlock
+  # Store respawnContext in SQLite
+  registry_update_field "$task_id" "respawn_context" "$respawn_context"
 
   # Relaunch agent
   nohup bash "${worktree}/.foundry-run.sh" \

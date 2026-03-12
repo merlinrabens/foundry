@@ -295,6 +295,7 @@ _field_to_column() {
 _sql_value() {
   local col="$1" value="$2"
   case "$value" in
+    "")  echo "NULL" ;;
     true)
       case "$col" in
         gemini_addressed|notify_on_complete) echo "1" ;;
