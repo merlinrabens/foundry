@@ -191,4 +191,5 @@ _gather_review_feedback() {
     --jq "[.[] | select(.body != \"\" ${since_ts:+and (.created_at >= \"${since_ts}\")}) ] | .[] | \"\\(.path):\\(.line // .original_line) [\\(.user.login)]: \\(.body)\"" \
     2>/dev/null || echo "")
   [ -n "$inline_comments" ] && _FAILURE_DETAILS="${_FAILURE_DETAILS}\n\n── Inline Code Comments ──\n${inline_comments}"
+  return 0
 }
