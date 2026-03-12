@@ -216,6 +216,18 @@ class ACPOrchestrator:
 
         self._log("Startup drain complete (timeout or empty)")
 
+    async def _send_notification(self, method: str, params: dict | None = None):
+        """Send a JSON-RPC 2.0 notification (no id, no response expected)."""
+        notif: dict = {"jsonrpc": "2.0", "method": method}
+        if params:
+            notif["params"] = params
+        payload = json.dumps(notif) + "\n"
+        try:
+            self.process.stdin.write(payload.encode())
+            await self.process.stdin.drain()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass  # Best-effort — if pipe is dead, cancel is moot
+
     async def _send_request(self, method: str, params: dict | None = None) -> dict:
         """Send a JSON-RPC 2.0 request and read the response."""
         req = {
@@ -237,8 +249,19 @@ class ACPOrchestrator:
                 f"ACP adapter stdin closed (rc={rc}): {type(e).__name__}: {e}"
             ) from e
 
+        # Track whether we already sent a cancel for this request
+        cancel_sent = False
+
         # Read response (may be preceded by notifications and agent→client requests)
         while True:
+            # Mid-turn steer: if USR1 arrived during a session/prompt, cancel the turn
+            # so the steer loop can re-prompt with the new direction.
+            if (self._steer_pending and not cancel_sent
+                    and method == "session/prompt"):
+                self._log("Steer received mid-turn — sending session/cancel...")
+                await self._send_notification("session/cancel")
+                cancel_sent = True
+
             line = await asyncio.wait_for(
                 self._read_line(), timeout=self.timeout
             )
@@ -445,13 +468,21 @@ class ACPOrchestrator:
             else:
                 stop_reason = prompt_resp.get("result", {}).get("stopReason", "end_turn")
                 self._log(f"\nAgent finished (stopReason: {stop_reason})")
-                if stop_reason in ("cancelled", "refusal"):
+                if stop_reason == "refusal":
                     exit_code = 1
+                elif stop_reason == "cancelled" and self._steer_pending:
+                    # Turn was cancelled by our mid-turn steer — not an error,
+                    # the steer loop below will re-prompt with the new direction
+                    self._log("Turn cancelled for mid-turn steer redirect")
+                elif stop_reason == "cancelled":
+                    exit_code = 1  # Cancelled without steer = real cancellation
 
-            # Steer loop: after each turn, check for pending steers and send as follow-up prompts.
-            # This lets `foundry steer` inject messages between agent turns.
-            while exit_code == 0 and self._steer_pending:
+            # Steer loop: after each turn (or mid-turn cancel), check for pending steers
+            # and send as follow-up prompts. Agent keeps full context from prior turns.
+            while self._steer_pending:
                 steer_msg = await self._consume_steer()
+                if not steer_msg:
+                    break  # Signal fired but no steer file — spurious
                 if steer_msg:
                     self._log(f"Sending steer: {steer_msg[:100]}...")
                     prompt_resp = await self._send_request("session/prompt", {
@@ -463,8 +494,15 @@ class ACPOrchestrator:
                         break
                     stop_reason = prompt_resp.get("result", {}).get("stopReason", "end_turn")
                     self._log(f"\nAgent finished after steer (stopReason: {stop_reason})")
-                    if stop_reason in ("cancelled", "refusal"):
+                    if stop_reason == "refusal":
                         exit_code = 1
+                        break
+                    elif stop_reason == "cancelled" and self._steer_pending:
+                        # Another steer arrived during this steer turn — loop continues
+                        self._log("Steer turn cancelled by newer steer")
+                    elif stop_reason == "cancelled":
+                        exit_code = 1
+                        break
 
             self._phase = "done" if exit_code == 0 else "failed"
             self._write_status()
