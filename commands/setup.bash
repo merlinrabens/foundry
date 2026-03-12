@@ -148,7 +148,9 @@ cmd_setup() {
     elif [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
       _info "Claude auth: OAuth token in environment"
     elif command -v security >/dev/null 2>&1 && security find-generic-password -s "Claude Code-credentials" -w >/dev/null 2>&1; then
-      _info "Claude auth: signed in (Keychain)"
+      _info "Claude auth: signed in (credential store)"
+    elif command -v secret-tool >/dev/null 2>&1 && secret-tool lookup service "Claude Code-credentials" >/dev/null 2>&1; then
+      _info "Claude auth: signed in (credential store)"
     elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
       _info "Claude auth: API key set (pay-per-use)"
     else

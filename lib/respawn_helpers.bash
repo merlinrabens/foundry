@@ -20,7 +20,19 @@ _fetch_deploy_build_log() {
   elif echo "$link" | grep -q "vercel.com"; then
     # Vercel: extract deployment ID from URL, fetch via API
     local vercel_token vercel_deploy_id
-    vercel_token=$(python3 -c "import json; print(json.load(open('$HOME/Library/Application Support/com.vercel.cli/auth.json')).get('token',''))" 2>/dev/null)
+    vercel_token=$(python3 -c "
+import json, os, pathlib
+# macOS: ~/Library/Application Support/com.vercel.cli/auth.json
+# Linux: ~/.config/com.vercel.cli/auth.json (XDG)
+for p in [
+    pathlib.Path.home() / 'Library/Application Support/com.vercel.cli/auth.json',
+    pathlib.Path.home() / '.config/com.vercel.cli/auth.json',
+    pathlib.Path(os.environ.get('XDG_CONFIG_HOME', '')) / 'com.vercel.cli/auth.json',
+]:
+    if p.is_file():
+        print(json.load(open(p)).get('token', ''))
+        break
+" 2>/dev/null)
     # URL format: https://vercel.com/team/project/DEPLOY_ID or vercel.com/github
     vercel_deploy_id=$(echo "$link" | grep -oE '/[A-Za-z0-9]{20,}$' | tr -d '/')
     if [ -n "$vercel_token" ] && [ -n "$vercel_deploy_id" ]; then

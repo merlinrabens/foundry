@@ -38,8 +38,8 @@ fi
 for f in "${FOUNDRY_DIR}/lib/"*.bash; do source "$f"; done
 
 # Preflight
-command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required. brew install jq"; exit 1; }
-command -v gh >/dev/null 2>&1 || { echo "ERROR: gh CLI is required. brew install gh"; exit 1; }
+command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required. Install: brew install jq (macOS) or sudo apt install jq (Linux)"; exit 1; }
+command -v gh >/dev/null 2>&1 || { echo "ERROR: gh CLI is required. Install: brew install gh (macOS) or https://github.com/cli/cli/blob/trunk/docs/install_linux.md"; exit 1; }
 if [ "${USE_SQLITE_REGISTRY:-false}" = "true" ]; then
   command -v sqlite3 >/dev/null 2>&1 || { echo "ERROR: sqlite3 is required"; exit 1; }
 fi

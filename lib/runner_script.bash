@@ -20,7 +20,7 @@ RUNNER_EOF
 # Claude auth fallback chain (OAuth first, API key last):
 #   1. ~/.foundry/.setup-token  (explicit setup token, highest priority)
 #   2. CLAUDE_CODE_OAUTH_TOKEN env var (pre-configured OAuth)
-#   3. macOS Keychain "Claude Code-credentials" (cached from 'claude /login')
+#   3. OS credential store: macOS Keychain or Linux secret-tool (cached from 'claude /login')
 #   4. ANTHROPIC_API_KEY env var (pay-per-use, lowest priority)
 _claude_token=""
 _claude_auth_type=""
@@ -41,13 +41,20 @@ if [ -z "$_claude_token" ] && [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
   _claude_auth_type="env:CLAUDE_CODE_OAUTH_TOKEN"
 fi
 
-# 3. macOS Keychain (OAuth)
-if [ -z "$_claude_token" ] && command -v security >/dev/null 2>&1; then
-  _keychain_json=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null || echo "")
+# 3. OS credential store (OAuth)
+# macOS: Keychain via `security` CLI
+# Linux: secret-tool (GNOME Keyring) or credential file
+if [ -z "$_claude_token" ]; then
+  _keychain_json=""
+  if command -v security >/dev/null 2>&1; then
+    _keychain_json=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null || echo "")
+  elif command -v secret-tool >/dev/null 2>&1; then
+    _keychain_json=$(secret-tool lookup service "Claude Code-credentials" 2>/dev/null || echo "")
+  fi
   if [ -n "$_keychain_json" ]; then
     _claude_token=$(echo "$_keychain_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('claudeAiOauth',{}).get('accessToken',''))" 2>/dev/null || echo "")
     if [ -n "$_claude_token" ]; then
-      _claude_auth_type="Keychain"
+      _claude_auth_type="credential-store"
     fi
   fi
   unset _keychain_json
