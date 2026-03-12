@@ -34,7 +34,7 @@ No prompts. No terminals. No babysitting. The issue body IS the spec. The agent 
 
 ## Real Numbers
 
-3 weeks of production use across 6 private repos:
+Early production use across 6 private repos (numbers from internal testing, updated periodically):
 
 | Metric | Value |
 |---|---|
@@ -45,7 +45,7 @@ No prompts. No terminals. No babysitting. The issue body IS the spec. The agent 
 | Avg review-fix cycles | 3.7 |
 | Required human help | 5 (11%) |
 
-The 5 failures? All caused by vague specs, not agent limitations. Fix the spec, re-run, it works.
+Most failures trace back to vague specs, not agent limitations. Fix the spec, re-run, it works.
 
 **Hardware:** 2019 MacBook Pro 16" (Intel i9, 64GB RAM). Two Claude Max subscriptions ($200/mo each), Codex, Gemini. ~$400/month total.
 

@@ -53,7 +53,7 @@ _build_pr_status_html() {
 
   # Fetch PR title + number (one gh call)
   local pr_info pr_title pr_number
-  pr_info=$(cd "$check_dir" 2>/dev/null && gh_retry gh pr view "$pr_ref" --json title,number 2>/dev/null || echo '{}')
+  pr_info=$(cd "$check_dir" 2>/dev/null && gh_retry gh pr view ${pr_ref:+"$pr_ref"} --json title,number 2>/dev/null || echo '{}')
   pr_title=$(echo "$pr_info" | jq -r '.title // "PR"')
   pr_number=$(echo "$pr_info" | jq -r '.number // ""')
 

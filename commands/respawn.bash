@@ -150,6 +150,13 @@ cmd_respawn() {
     # Orchestrator-written custom fix prompt (Zoe pattern)
     cp "$prompt_file_override" "$prompt_file"
     log "Using custom fix prompt: $prompt_file_override"
+  elif [ "$status" = "review-failed" ] && [ -f "${FOUNDRY_DIR}/templates/review-fix.md" ]; then
+    # Review-fix: frame as "address reviewer feedback", not "fix a failure"
+    log "Using review-fix template (status=$status)"
+    render_template "${FOUNDRY_DIR}/templates/review-fix.md" \
+      "TASK_CONTENT=${task_content}" \
+      "FAILURE_DETAILS=${failure_details}" \
+      > "$prompt_file"
   else
     render_template "${FOUNDRY_DIR}/templates/fix.md" \
       "TASK_CONTENT=${task_content}" \

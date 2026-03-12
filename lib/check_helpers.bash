@@ -30,17 +30,17 @@ _evaluate_pr() {
   _PR_BRANCH_SYNCED=""
 
   # Fetch PR URL
-  _PR_URL=$(cd "$check_dir" 2>/dev/null && gh_retry gh pr view "$pr_ref" --json url --jq '.url' || echo "PR $pr_ref")
+  _PR_URL=$(cd "$check_dir" 2>/dev/null && gh_retry gh pr view ${pr_ref:+"$pr_ref"} --json url --jq '.url' || echo "PR $pr_ref")
 
   # Fetch checks — deduplicate by name, keeping latest
   # Include workflow, description, link fields for failure classification
   local checks_raw checks_json
-  checks_raw=$(cd "$check_dir" 2>/dev/null && gh_retry gh pr checks "$pr_ref" --json name,state,completedAt,workflow,description,link || echo "[]")
+  checks_raw=$(cd "$check_dir" 2>/dev/null && gh_retry gh pr checks ${pr_ref:+"$pr_ref"} --json name,state,completedAt,workflow,description,link || echo "[]")
   checks_json=$(echo "$checks_raw" | jq '[group_by(.name)[] | sort_by(.completedAt // "") | last]' 2>/dev/null || echo "$checks_raw")
 
   # Detect workflow file changes
   local changed_files
-  changed_files=$(cd "$check_dir" 2>/dev/null && gh_retry gh pr diff "$pr_ref" --name-only 2>/dev/null || echo "")
+  changed_files=$(cd "$check_dir" 2>/dev/null && gh_retry gh pr diff ${pr_ref:+"$pr_ref"} --name-only 2>/dev/null || echo "")
   if echo "$changed_files" | grep -q '\.github/workflows/'; then
     _PR_MODIFIES_WORKFLOWS=1
   fi
@@ -63,7 +63,7 @@ _evaluate_pr() {
 
   # Fetch reviews
   local reviews_json latest_reviews
-  reviews_json=$(cd "$check_dir" 2>/dev/null && gh_retry gh pr view "$pr_ref" --json reviews --jq '.reviews' || echo "[]")
+  reviews_json=$(cd "$check_dir" 2>/dev/null && gh_retry gh pr view ${pr_ref:+"$pr_ref"} --json reviews --jq '.reviews' || echo "[]")
   latest_reviews=$(parse_latest_reviews "$reviews_json")
 
   # Claude
@@ -97,7 +97,7 @@ _evaluate_pr() {
     # Always fetch inline findings count — low-priority findings need fixing too
     local repo_slug pr_num_for_gem
     repo_slug=$(cd "$check_dir" 2>/dev/null && gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null || echo "")
-    pr_num_for_gem=$(cd "$check_dir" 2>/dev/null && gh_retry gh pr view "$pr_ref" --json number --jq '.number' || echo "")
+    pr_num_for_gem=$(cd "$check_dir" 2>/dev/null && gh_retry gh pr view ${pr_ref:+"$pr_ref"} --json number --jq '.number' || echo "")
     if [ -n "$repo_slug" ] && [ -n "$pr_num_for_gem" ] && [ "$pr_num_for_gem" != "null" ]; then
       gemini_findings=$(gh api "repos/${repo_slug}/pulls/${pr_num_for_gem}/comments" \
         --jq '[.[] | select(.user.login | startswith("gemini-code-assist"))] | length' 2>/dev/null || echo "0")
@@ -154,7 +154,7 @@ _evaluate_pr() {
 
   # Screenshot evidence
   local pr_body
-  pr_body=$(cd "$check_dir" 2>/dev/null && gh_retry gh pr view "$pr_ref" --json body --jq '.body' || echo "")
+  pr_body=$(cd "$check_dir" 2>/dev/null && gh_retry gh pr view ${pr_ref:+"$pr_ref"} --json body --jq '.body' || echo "")
   _PR_SCREENSHOT_STATUS=$(get_screenshot_status "$changed_files" "$pr_body")
 
   # Build checks summary (CRKGS)
@@ -190,11 +190,7 @@ _try_respawn_or_exhaust() {
 
   if [ "$attempts" -lt "$max_attempts" ]; then
     log_warn "  Auto-respawning (attempt $((attempts + 1))/$max_attempts)..."
-    tg_notify_task "$task_id" "🔄 <b>${reason_msg}</b>
-<code>${task_id}</code>
-Respawning (attempt $((attempts + 1))/$max_attempts)${pr_url:+
-
-<a href=\"${pr_url}\">→ PR</a>}" "HTML"
+    # No TG notification for intermediate respawn cycles — only notify on exhaustion or ready
     if cmd_respawn "$task_id"; then
       return 0
     else
@@ -247,11 +243,7 @@ _try_review_fix() {
     local next_fix=$((review_fixes + 1))
     registry_update_field "$task_id" "reviewFixAttempts" "$next_fix"
     log_warn "  Review-fix cycle ($next_fix/$max_review_fixes)..."
-    tg_notify_task "$task_id" "🔧 <b>${reason_msg}</b>
-<code>${task_id}</code>
-Auto-fixing (review cycle ${next_fix}/${max_review_fixes})${pr_url:+
-
-<a href=\"${pr_url}\">→ PR</a>}" "HTML"
+    # No TG notification for intermediate fix cycles — only notify on exhaustion or ready
     if cmd_respawn --force "$task_id"; then
       return 0
     else

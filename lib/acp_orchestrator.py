@@ -615,6 +615,23 @@ async def main():
             exit_code = preflight_result
 
     orchestrator.write_done(exit_code)
+
+    # Safety net: trigger `foundry check` after completion.
+    # If the agent finished without pushing, no CI/gate event fires and the
+    # task status stays stuck on "running". This async check closes the gap.
+    foundry_bin = os.path.join(orchestrator.foundry_dir, "foundry")
+    if os.path.isfile(foundry_bin):
+        try:
+            orchestrator._log("Triggering post-completion foundry check...")
+            subprocess.Popen(
+                ["bash", foundry_bin, "check"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception as e:
+            orchestrator._log(f"Post-completion check failed to launch: {e}")
+
     orchestrator.close()
 
     sys.exit(exit_code)

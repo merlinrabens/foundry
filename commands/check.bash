@@ -32,21 +32,11 @@ _check_pr_status() {
     if [ "$_PR_DEPLOY_FAILS" -gt 0 ] && [ "$_PR_CI_FAILS" -eq 0 ]; then
       if is_transient_deploy_failure "$_PR_DEPLOY_DESCS"; then
         echo -e "${YELLOW}Deploy failing (transient): $_PR_DEPLOY_FAIL_NAMES${NC}"
-        if [ "$last_notified" != "deploy-failing" ]; then
-          registry_update_field "$id" "lastNotifiedState" "deploy-failing"
-          _build_pr_status_html "$check_dir" "$pr_ref"
-          tg_notify_task "$id" "$_PR_STATUS_HTML" "HTML" \
-            || registry_update_field "$id" "lastNotifiedState" ""
-        fi
+        # No notification — transient failures resolve on their own
         return 5  # Transient deploy failure (don't respawn)
       else
         echo -e "${YELLOW}Deploy BUILD failing: $_PR_DEPLOY_FAIL_NAMES${NC}"
-        if [ "$last_notified" != "deploy-build-failing" ]; then
-          registry_update_field "$id" "lastNotifiedState" "deploy-build-failing"
-          _build_pr_status_html "$check_dir" "$pr_ref"
-          tg_notify_task "$id" "$_PR_STATUS_HTML" "HTML" \
-            || registry_update_field "$id" "lastNotifiedState" ""
-        fi
+        # No notification — agent auto-fixes via respawn
         _PR_CI_FAIL_NAMES="deploy:${_PR_DEPLOY_FAIL_NAMES}"
         return 1  # Code issue — respawn to fix
       fi
@@ -55,12 +45,7 @@ _check_pr_status() {
     local fail_detail="$_PR_CI_FAIL_NAMES"
     [ "$_PR_DEPLOY_FAILS" -gt 0 ] && fail_detail="$fail_detail + deploy: $_PR_DEPLOY_FAIL_NAMES"
     echo -e "${YELLOW}CI failing ($_PR_ANY_FAIL check(s): ${fail_detail:-unknown})${NC}"
-    if [ "$last_notified" != "ci-failing" ]; then
-      registry_update_field "$id" "lastNotifiedState" "ci-failing"
-      _build_pr_status_html "$check_dir" "$pr_ref"
-      tg_notify_task "$id" "$_PR_STATUS_HTML" "HTML" \
-        || registry_update_field "$id" "lastNotifiedState" ""
-    fi
+    # No notification — agent auto-fixes via respawn
     return 1  # CI failing
   elif [ "$_PR_ANY_PENDING" -gt 0 ]; then
     echo -e "${BLUE}CI pending ($_PR_ANY_PENDING check(s))${NC}"
@@ -73,12 +58,7 @@ _check_pr_status() {
       return 4  # Wait for all reviews before fixing
     fi
     echo -e "${YELLOW}CI passed, all reviews in, changes requested${NC}"
-    if [ "$last_notified" != "changes-requested" ]; then
-      registry_update_field "$id" "lastNotifiedState" "changes-requested"
-      _build_pr_status_html "$check_dir" "$pr_ref"
-      tg_notify_task "$id" "$_PR_STATUS_HTML" "HTML" \
-        || registry_update_field "$id" "lastNotifiedState" ""
-    fi
+    # No notification — review-fix cycles are silent (agent handles automatically)
     return 3  # Changes requested (all reviews collected)
   elif [ "${_PR_GEMINI_PENDING:-0}" -eq 1 ]; then
     echo -e "${BLUE}Awaiting Gemini review [$_PR_CHECKS_SUMMARY]${NC}"
@@ -94,12 +74,7 @@ _check_pr_status() {
         return 4  # Wait for all reviews before fixing
       fi
       echo -e "${YELLOW}Gemini findings need fixing (all reviews in) [$_PR_CHECKS_SUMMARY]${NC}"
-      if [ "$last_notified" != "gemini-findings" ]; then
-        registry_update_field "$id" "lastNotifiedState" "gemini-findings"
-        _build_pr_status_html "$check_dir" "$pr_ref"
-        tg_notify_task "$id" "$_PR_STATUS_HTML" "HTML" \
-          || registry_update_field "$id" "lastNotifiedState" ""
-      fi
+      # No notification — agent auto-fixes, Gemini addressed flag prevents loop
       return 6  # Gemini findings need fix
     fi
   fi
