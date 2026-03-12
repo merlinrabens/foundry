@@ -31,10 +31,11 @@ try:
 except: pass
 " 2>/dev/null)
   fi
-  # Tier 3: 1Password via service account (SecretRef-compatible)
-  if [ -z "$token" ]; then
+  # Tier 3: 1Password via service account (if op CLI + OP_SERVICE_ACCOUNT_TOKEN available)
+  if [ -z "$token" ] && command -v op &>/dev/null; then
     local op_token="${OP_SERVICE_ACCOUNT_TOKEN:-}"
-    [ -z "$op_token" ] && op_token=$(python3 -c "
+    # Try OpenClaw's secrets file as fallback for the service account token
+    [ -z "$op_token" ] && [ -f "$HOME/.openclaw/secrets.local.json" ] && op_token=$(python3 -c "
 import json
 try:
     s = json.loads(open('$HOME/.openclaw/secrets.local.json').read())
@@ -42,9 +43,9 @@ try:
 except: pass
 " 2>/dev/null)
     if [ -n "$op_token" ]; then
-      token=$(OP_SERVICE_ACCOUNT_TOKEN="$op_token" \
-        /usr/local/Caskroom/1password-cli/2.32.0/op read \
-        "op://OpenClaw/Telegram Bot Token/credential" 2>/dev/null)
+      # Try common vault/item names (user can override via FOUNDRY_TG_OP_REF env var)
+      local op_ref="${FOUNDRY_TG_OP_REF:-op://OpenClaw/Telegram Bot Token/credential}"
+      token=$(OP_SERVICE_ACCOUNT_TOKEN="$op_token" op read "$op_ref" 2>/dev/null)
     fi
   fi
   if [ -z "$token" ]; then
