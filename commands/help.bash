@@ -7,7 +7,7 @@ Foundry — Multi-Agent Code Factory
 COMMANDS
   setup                             Interactive config wizard (repos, agents, CI)
   spawn <repo> <spec|task> [model]  Launch agent in isolated worktree
-  check [task-id]                   Monitor all agents (or one specific task)
+  check [task-id]                   Lifecycle engine: evaluate CI/reviews, transition states, auto-respawn
   status                            Show task overview with check status
   attach <task-id>                  Stream agent's live log output
   logs <task-id>                    Tail agent log file
@@ -20,7 +20,7 @@ COMMANDS
   auto                              Proactive scan + spawn by priority score
   register <repo> <pr-number>       Track an existing PR for monitoring
   nudge <message>                   Handle CI review nudge (parse + targeted check)
-  cleanup                           Remove completed worktrees + registry
+  cleanup [task-id...]               Archive done tasks, remove worktrees + branches + logs
   scan                              Find specs across known projects
   recommend <spec|task>             Suggest best model for a task
   queue                             Show priority-scored spec backlog
