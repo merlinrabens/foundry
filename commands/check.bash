@@ -403,6 +403,16 @@ cmd_check() {
     done
   fi
 
+  # Reconcile done-no-pr tasks that actually have a PR linked
+  # This catches cases where the agent exited before check discovered the PR,
+  # or where a PR was manually registered after the task was marked done-no-pr.
+  local stale_ids
+  stale_ids=$(echo "$tasks" | jq -r '.[] | select(.status == "done-no-pr" and (.pr // "" | length > 0) and .pr != "null") | .id')
+  for sid in $stale_ids; do
+    log "Reconciling done-no-pr task with PR: $sid"
+    registry_update_field "$sid" "status" "pr-open"
+  done
+
   # Auto-prune: remove done/merged/closed tasks older than 24h
   local now prune_ids
   now=$(date +%s)
