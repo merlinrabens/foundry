@@ -150,19 +150,21 @@ class ACPOrchestrator:
         except OSError:
             pass  # Non-critical — don't crash the agent
 
+    async def _consume_steer(self) -> str:
+        """Read and consume the steer file, returning the message (or empty string)."""
+        self._steer_pending = False
+        steer_file = self._get_steer_file()
+        if not steer_file.exists():
+            return ""
+        steer_msg = steer_file.read_text().strip()
+        steer_file.unlink(missing_ok=True)
+        return steer_msg
+
     async def _check_and_send_steer(self):
         """If a steer file exists and we got USR1, send it as a follow-up prompt."""
         if not self._steer_pending:
             return
-        self._steer_pending = False
-
-        steer_file = self._get_steer_file()
-        if not steer_file.exists():
-            return
-
-        steer_msg = steer_file.read_text().strip()
-        steer_file.unlink(missing_ok=True)
-
+        steer_msg = await self._consume_steer()
         if steer_msg and self._session_id:
             self._log(f"Sending steer: {steer_msg[:80]}...")
             try:
@@ -445,6 +447,25 @@ class ACPOrchestrator:
                 self._log(f"\nAgent finished (stopReason: {stop_reason})")
                 if stop_reason in ("cancelled", "refusal"):
                     exit_code = 1
+
+            # Steer loop: after each turn, check for pending steers and send as follow-up prompts.
+            # This lets `foundry steer` inject messages between agent turns.
+            while exit_code == 0 and self._steer_pending:
+                steer_msg = await self._consume_steer()
+                if steer_msg:
+                    self._log(f"Sending steer: {steer_msg[:100]}...")
+                    prompt_resp = await self._send_request("session/prompt", {
+                        "sessionId": self._session_id,
+                        "prompt": [{"type": "text", "text": steer_msg}],
+                    })
+                    if "error" in prompt_resp:
+                        self._log(f"Steer prompt failed: {prompt_resp['error']}")
+                        break
+                    stop_reason = prompt_resp.get("result", {}).get("stopReason", "end_turn")
+                    self._log(f"\nAgent finished after steer (stopReason: {stop_reason})")
+                    if stop_reason in ("cancelled", "refusal"):
+                        exit_code = 1
+
             self._phase = "done" if exit_code == 0 else "failed"
             self._write_status()
 
