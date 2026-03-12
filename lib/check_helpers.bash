@@ -30,7 +30,13 @@ _evaluate_pr() {
   _PR_BRANCH_SYNCED=""
 
   # Fetch PR URL
-  _PR_URL=$(cd "$check_dir" 2>/dev/null && gh_retry gh pr view ${pr_ref:+"$pr_ref"} --json url --jq '.url' || echo "PR $pr_ref")
+  _PR_URL=$(cd "$check_dir" 2>/dev/null && gh_retry gh pr view ${pr_ref:+"$pr_ref"} --json url --jq '.url' || echo "")
+  # Fallback: construct URL from pr_ref if it's a number
+  if [ -z "$_PR_URL" ] && echo "$pr_ref" | grep -qE '^[0-9]+$' 2>/dev/null; then
+    local _repo_slug
+    _repo_slug=$(cd "$check_dir" 2>/dev/null && gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null || echo "")
+    [ -n "$_repo_slug" ] && _PR_URL="https://github.com/${_repo_slug}/pull/${pr_ref}"
+  fi
 
   # Fetch checks — deduplicate by name, keeping latest
   # Include workflow, description, link fields for failure classification

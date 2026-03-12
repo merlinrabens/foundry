@@ -57,6 +57,15 @@ _build_pr_status_html() {
   pr_title=$(echo "$pr_info" | jq -r '.title // "PR"')
   pr_number=$(echo "$pr_info" | jq -r '.number // ""')
 
+  # Fallback: extract PR number from _PR_URL if gh pr view didn't resolve it
+  if [ -z "$pr_number" ] && [ -n "$_PR_URL" ]; then
+    pr_number=$(echo "$_PR_URL" | grep -oE '[0-9]+$' || echo "")
+  fi
+  # Fallback: extract from pr_ref if it's a number
+  if [ -z "$pr_number" ] && echo "$pr_ref" | grep -qE '^[0-9]+$' 2>/dev/null; then
+    pr_number="$pr_ref"
+  fi
+
   # Determine overall status
   local all_green=true
   [ "$_PR_ANY_FAIL" -gt 0 ] && all_green=false
