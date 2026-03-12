@@ -95,7 +95,7 @@ Not every agent is good at everything:
 - **Codex**: Backend, APIs, infrastructure, bulk changes (the workhorse)
 - **Gemini**: Design systems, documentation, config files, creative structure
 
-The router is a grep. It works 85% of the time. The other 15% you override with a hint in the issue.
+The router is a grep. When it picks wrong, you override with a hint in the issue.
 
 ```bash
 # Keyword routing (yes, really)
@@ -155,7 +155,7 @@ Foundry checks every 30 minutes:
 3. CI failed? → mark for investigation
 4. Budget exhausted? → archive, notify you
 
-80% complete on attempt 1. 15% need one respawn. 5% need a human.
+Most tasks complete on the first attempt. Persistent failures get escalated to you via Telegram.
 
 ---
 
@@ -210,12 +210,8 @@ ACP (Agent Client Protocol) is like LSP (Language Server Protocol), but for AI c
 [OpenClaw](https://github.com/openclaw/openclaw) is an AI gateway that speaks ACP natively. It turns Foundry from "scripts on a laptop" into "managed agent fleet you control from your phone":
 
 ```bash
-# Spawn an agent via ACP from anywhere
-sessions_spawn \
-  --runtime acp \
-  --task "Build the tracking integration per issue #6" \
-  --model sonnet \
-  --mode run
+# Spawn via your orchestrator agent (e.g. from Telegram, Slack, or CLI)
+foundry spawn my-org/my-repo "Build the tracking integration per issue #6" claude --topic
 ```
 
 ### What OpenClaw Adds
@@ -313,6 +309,7 @@ foundry check [task-id]               Monitor agents, trigger reviews
 foundry respawn <task-id>             Retry a failed task
 foundry orchestrate [repo]            Full auto: scan + spawn + check
 foundry cleanup                       Archive completed tasks
+foundry steer <task-id> <msg>         Redirect agent mid-flight via ACP
 foundry diagnose <task-id>            Debug a stuck task
 foundry peek <task-id>                View agent's last output
 foundry nudge <task-id>               Unstick a stalled agent
@@ -333,11 +330,12 @@ When any CI workflow finishes, any review is submitted, or a PR is closed, GitHu
 # .github/workflows/foundry-gate.yml (included in ci-templates/)
 on:
   workflow_run:
-    workflows: ["Tests & Lint", "claude-review", "codex-review"]
+    workflows: ["Tests & Lint", "Claude Code Review", "Codex Code Review", "Gemini Review Check"]
     types: [completed]
   pull_request_review:
     types: [submitted]
-runs-on: self-hosted  # ← your Mac, not GitHub cloud
+
+runs-on: [self-hosted, foundry]  # ← your machine, not GitHub cloud
 steps:
   - run: foundry check "$TASK_ID"
 ```
@@ -363,16 +361,13 @@ The cron jobs below are the **fallback** for edge cases. The self-hosted runner 
 
 ```bash
 # Check loop: monitor agents, trigger reviews (every 30 min)
-2,32 * * * *  cd /path/to/foundry && bash foundry check-all
+2,32 * * * *  cd ~/.foundry && bash foundry check
 
 # Orchestrator: scan for new issues, spawn agents (every 3 hours)
-5 */3 * * *   cd /path/to/foundry && bash foundry orchestrate
-
-# Night build: catch anything missed (1:30 AM)
-30 1 * * *    cd /path/to/foundry && bash foundry orchestrate --night
+5 */3 * * *   cd ~/.foundry && bash foundry orchestrate
 
 # Cleanup: archive completed tasks (3 AM)
-0 3 * * *     cd /path/to/foundry && bash foundry cleanup
+0 3 * * *     cd ~/.foundry && bash foundry cleanup
 ```
 
 ## Configuration
@@ -394,22 +389,29 @@ foundry (CLI entry point)
 ├── commands/           # User-facing commands
 │   ├── spawn.bash      # Agent spawning + worktree setup
 │   ├── check.bash      # Health monitoring + review triggers
+│   ├── respawn.bash    # Failure recovery + context injection
 │   ├── orchestrate.bash # Full automation loop
+│   ├── lifecycle.bash  # attach, logs, kill, steer, open
 │   └── status.bash     # Dashboard
 ├── core/               # Shared infrastructure
 │   ├── registry_sqlite.bash  # SQLite state management
 │   ├── gh.bash               # GitHub API (with retry)
-│   └── logging.bash          # Structured logging + notifications
+│   └── logging.bash          # Structured logging + Telegram
 ├── lib/                # Business logic
+│   ├── acp_orchestrator.py   # ACP protocol handler (all backends)
+│   ├── runner_script.bash    # Agent runner generator
 │   ├── jerry_routing.bash    # Agent selection
 │   ├── review_pipeline.bash  # 3-reviewer orchestration
 │   ├── spawn_guards.bash     # Pre-spawn validation
+│   ├── respawn_helpers.bash  # Failure context gathering
 │   └── state_machine.bash    # Task lifecycle
 ├── ci-templates/       # GitHub Actions workflows
 │   ├── claude-code-review.yml
 │   ├── codex-review.yml
-│   └── gemini-check.yml
-└── tests/              # 347 tests (bats)
+│   ├── gemini-check.yml
+│   ├── foundry-gate.yml      # Event-driven bridge
+│   └── visual-evidence.yml   # Screenshot capture
+└── tests/              # 385 tests (bats)
 ```
 
 ## License
