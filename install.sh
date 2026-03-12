@@ -256,15 +256,16 @@ if [ -d "$OC_SKILLS" ]; then
   OC_TARGET="$OC_SKILLS/foundry"
   OC_SOURCE="$FOUNDRY_HOME/openclaw"
 
+  # Copy instead of symlink — OpenClaw rejects skills whose realpath
+  # escapes the workspace root (~/.openclaw/workspace)
   if [ -L "$OC_TARGET" ]; then
     rm -f "$OC_TARGET"
   elif [ -d "$OC_TARGET" ]; then
-    mv "$OC_TARGET" "${OC_TARGET}.bak.$(date +%s)"
-    warn "Backed up old skill directory"
+    rm -rf "$OC_TARGET"
   fi
 
-  ln -s "$OC_SOURCE" "$OC_TARGET"
-  info "Linked OpenClaw skill: foundry -> $OC_SOURCE"
+  cp -r "$OC_SOURCE" "$OC_TARGET"
+  info "Installed OpenClaw skill: foundry"
 fi
 
 # ─── Detect Agents ──────────────────────────────────────────────────

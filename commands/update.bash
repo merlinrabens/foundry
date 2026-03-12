@@ -40,8 +40,10 @@ cmd_update() {
   log_ok "Foundry v${version} ready"
 }
 
-# _link_openclaw_skill — auto-symlink skill into OpenClaw workspace if present
-_link_openclaw_skill() {
+# _install_openclaw_skill — copy skill files into OpenClaw workspace
+# Uses cp instead of symlink because OpenClaw rejects skills whose
+# realpath escapes the workspace root (~/.openclaw/workspace).
+_install_openclaw_skill() {
   local oc_skills="${HOME}/.openclaw/workspace/skills"
   local skill_source="${FOUNDRY_DIR}/openclaw"
 
@@ -50,20 +52,20 @@ _link_openclaw_skill() {
 
   local target="${oc_skills}/foundry"
 
+  # Remove old symlink (pre-v4.6 installs) or stale copy
   if [ -L "$target" ]; then
-    # Already a symlink — check it points to the right place
-    local current
-    current=$(readlink "$target" 2>/dev/null || echo "")
-    if [ "$current" = "$skill_source" ]; then
-      return 0  # Already correct
-    fi
     rm -f "$target"
   elif [ -d "$target" ]; then
-    # Real directory (old copy) — back it up and replace with symlink
-    mv "$target" "${target}.bak.$(date +%s)"
-    log "Backed up old skill dir to ${target}.bak.*"
+    # Check if already up-to-date (compare SKILL.md content)
+    if diff -q "$skill_source/SKILL.md" "$target/SKILL.md" >/dev/null 2>&1; then
+      return 0  # Already current
+    fi
   fi
 
-  ln -s "$skill_source" "$target"
-  log_ok "Linked OpenClaw skill: $target -> $skill_source"
+  rm -rf "$target"
+  cp -r "$skill_source" "$target"
+  log_ok "Installed OpenClaw skill: $target"
 }
+
+# Backward compat alias
+_link_openclaw_skill() { _install_openclaw_skill; }
