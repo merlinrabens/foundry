@@ -1,0 +1,179 @@
+# Claude Code Review — Portable CI Template
+# Requires: CLAUDE_CODE_OAUTH_TOKEN secret in repo settings (OAuth token from Claude Code CLI)
+# Blocking: YES — CHANGES_REQUESTED blocks merge
+#
+# Deploy: copy to .github/workflows/claude-code-review.yml in any repo
+
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  claude-review:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      vars.DISABLE_CLAUDE_REVIEW != 'true'
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+      actions: read
+      checks: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code Review
+        id: claude-review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          show_full_output: false
+          track_progress: false
+          allowed_bots: "claude[bot]"
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            You are acting as the Principal Engineer Reviewer for a high-velocity, lean startup. Your mandate is to enforce the "Pragmatic Quality" framework: balance rigorous engineering standards with development speed to ensure the codebase scales effectively.
+
+            ### Review Philosophy & Directives
+
+            1.  **Net Positive > Perfection:** Your primary objective is to determine if the change *definitively improves* the overall code health. Do not block on imperfections if the change is a net improvement.
+            2.  **Focus on Substance:** Assume automated CI (Linters, Formatters, basic tests) has passed. Focus your analysis strictly on architecture, design, business logic, security, and complex interactions. Do not comment on style or formatting.
+            3.  **Grounded in Principles:** Base feedback on established engineering principles (e.g., SOLID, DRY) and technical facts, not opinions.
+            4.  **Signal Intent:** Prefix minor, optional polish suggestions with "**Nit:**".
+
+            ### Hierarchical Review Checklist
+
+            Analyze the changes using the following framework, prioritizing these high-impact areas:
+
+            1. **Architectural Design & Integrity**
+                - Is the design appropriate for the system and aligned with existing architectural patterns?
+                - Is the code appropriately modular? Does it adhere to the Single Responsibility Principle (SRP)?
+                - Does it introduce unnecessary complexity, or could a simpler, more scalable solution achieve the same goal?
+                - Is the PR atomic? (Does it fulfill a single, cohesive purpose, or is it bundling unrelated changes?)
+
+            2. **Functionality & Correctness**
+                - Does the code correctly achieve the intended business logic?
+                - Are edge cases, error conditions, and unexpected inputs handled gracefully and robustly?
+                - Identify potential logical flaws, race conditions, or concurrency issues.
+
+            3. **Security (Non-Negotiable)**
+                - Is all user input rigorously validated, sanitized, and escaped (mitigating XSS, SQLi, etc.)?
+                - Are authentication and authorization checks correctly and consistently applied to all protected resources?
+                - Are secrets, API keys, or credentials hardcoded or potentially leaked (e.g., in logs or error messages)?
+
+            4. **Maintainability & Readability**
+                - Is the code easy for a future developer to understand and modify?
+                - Are variable, function, and class names descriptive and unambiguous?
+                - Is the control flow clear? (Analyze complex conditionals and nesting depth).
+
+            5. **Testing Strategy & Robustness**
+                - Is the test coverage sufficient for the complexity and criticality of the change?
+                - Do tests validate failure modes, security edge cases, and error paths, not just the "happy path"?
+
+            6. **Performance & Scalability**
+                - Backend: Are database queries efficient? N+1 query problems? Appropriate caching?
+                - Frontend: Does the change negatively impact bundle size or Core Web Vitals?
+                - API Design: Is the API contract clear, consistent, and robust in error handling?
+
+            ### Output Guidelines
+
+            Provide specific, actionable feedback. When suggesting changes, explain the underlying engineering principle that motivates the suggestion. Be constructive and concise.
+
+            Use the repository's CLAUDE.md for guidance on style and conventions.
+
+            **CRITICAL: Use `gh pr review` to submit your review, NOT `gh pr comment`.**
+
+            After completing your analysis, you MUST submit exactly ONE formal review using `gh pr review`. NEVER use `--comment` — it does not register as a proper review verdict.
+
+            - If the change is a NET POSITIVE (even with minor nits): Run `gh pr review ${{ github.event.pull_request.number }} --approve --body "Your feedback summary"`
+            - If you found critical issues that MUST be fixed before merge: Run `gh pr review ${{ github.event.pull_request.number }} --request-changes --body "Your feedback summary"`
+
+            IMPORTANT: You MUST choose either --approve or --request-changes. There is no third option. Nits and minor suggestions go in --approve with the feedback in the body. Only use --request-changes for blocking issues (security, correctness, architecture).
+
+            Submit exactly ONE review, then STOP.
+
+          claude_args: '--model claude-opus-4-6 --allowed-tools "Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr review:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh pr comment:*),Bash(gh pr checks:*)"'
+
+      - name: Deduplicate Claude reviews
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number
+            });
+
+            const claudeReviews = reviews
+              .filter(r =>
+                (r.user.login === 'claude[bot]' || r.user.login === 'claude')
+                && (r.state === 'APPROVED' || r.state === 'CHANGES_REQUESTED')
+              )
+              .sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
+
+            if (claudeReviews.length > 1) {
+              console.log(`Found ${claudeReviews.length} Claude reviews, keeping latest, dismissing ${claudeReviews.length - 1} duplicates`);
+              for (const review of claudeReviews.slice(1)) {
+                try {
+                  await github.rest.pulls.dismissReview({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    pull_number: context.payload.pull_request.number,
+                    review_id: review.id,
+                    message: 'Duplicate review dismissed'
+                  });
+                  console.log(`Dismissed duplicate review ${review.id}`);
+                } catch (e) {
+                  console.log(`Could not dismiss review ${review.id}: ${e.message}`);
+                }
+              }
+            }
+
+      - name: Set review status check
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number
+            });
+            const latest = reviews
+              .filter(r => (r.user.login === 'claude[bot]' || r.user.login === 'claude')
+                && r.state !== 'DISMISSED' && r.state !== 'COMMENTED')
+              .sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at))[0];
+
+            const conclusion = !latest ? 'neutral'
+              : latest.state === 'CHANGES_REQUESTED' ? 'failure'
+              : 'success';
+            const title = !latest ? 'Waiting for Claude review'
+              : latest.state === 'CHANGES_REQUESTED' ? 'Claude requested changes'
+              : 'Claude approved';
+
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Claude Review Verdict',
+              head_sha: context.payload.pull_request.head.sha,
+              status: 'completed',
+              conclusion,
+              output: { title, summary: `Review state: ${latest?.state || 'pending'}` }
+            });
+
+

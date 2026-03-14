@@ -1,0 +1,165 @@
+# foundry-gate.yml — Event-driven bridge: GitHub events → local foundry check
+#
+# Runs on a self-hosted runner (Mac mini). Triggers when:
+#   1. Any CI/review workflow completes on a foundry/ branch (same repo)
+#   2. A review is submitted on a foundry/ branch or "foundry"-labeled PR (same repo)
+#   3. A PR is closed/labeled with "foundry" (same repo)
+#
+# Security:
+#   - Fork PRs rejected at job level for ALL event types
+#   - workflow_run restricted to foundry/ branch prefix at job level (no runner waste)
+#   - All event data passed via env vars (no shell injection)
+#   - Unified concurrency key by branch name prevents duplicate checks
+#
+# Error handling:
+#   - gh API errors are detected and logged loudly (not swallowed)
+#   - foundry check failures are logged with exit code (state managed internally via SQLite)
+#   - Workflow itself exits 0 to avoid noisy red X on PRs (this is a trigger, not a gate)
+#
+# Requires: GitHub Actions self-hosted runner with label "foundry"
+# Setup: bash ~/.openclaw/workspace/scripts/foundry/scripts/setup-runner.sh
+
+name: Foundry Gate
+
+on:
+  workflow_run:
+    workflows:
+      - "Tests & Lint"
+      - "Claude Code Review"
+      - "Codex Code Review"
+      - "Gemini Review Check"
+    types: [completed]
+
+  pull_request_review:
+    types: [submitted, dismissed]
+
+  pull_request:
+    types: [closed, labeled]
+
+permissions:
+  pull-requests: read
+  contents: read
+
+jobs:
+  react:
+    # Gate: reject forks + filter to foundry-related events BEFORE runner allocation.
+    #
+    # PR/review events: same-repo + foundry/ branch or "foundry" label
+    # workflow_run: same-repo + foundry/ branch prefix only
+    #   (labeled non-foundry/ PRs still get PR/review event triggers, which is sufficient)
+    if: |
+      (github.event_name == 'pull_request_review' &&
+        github.event.pull_request.head.repo.full_name == github.repository && (
+          startsWith(github.event.pull_request.head.ref, 'foundry/') ||
+          contains(toJson(github.event.pull_request.labels), '"foundry"')
+      )) ||
+      (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository && (
+          startsWith(github.event.pull_request.head.ref, 'foundry/') ||
+          contains(toJson(github.event.pull_request.labels), '"foundry"')
+      )) ||
+      (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
+        startsWith(github.event.workflow_run.head_branch, 'foundry/'))
+
+    runs-on: [self-hosted, foundry]
+    timeout-minutes: 5
+
+    # Unified concurrency by branch name — consistent across all event types.
+    concurrency:
+      group: foundry-gate-${{ github.event.pull_request.head.ref || github.event.workflow_run.head_branch }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Find PR and run foundry check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          REPO: ${{ github.repository }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          LABEL_NAME: ${{ github.event.label.name }}
+          WR_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          FOUNDRY="$HOME/.openclaw/workspace/scripts/foundry/foundry"
+          DB="$HOME/.openclaw/workspace/scripts/foundry/foundry.db"
+
+          # ── Preflight: verify foundry binary exists ──────────────
+          if [ ! -f "$FOUNDRY" ]; then
+            echo "::error::Foundry binary not found at $FOUNDRY"
+            exit 1
+          fi
+
+          # ── Determine PR number from event ─────────────────────────
+          PR=""
+          BRANCH=""
+          if [ "$EVENT_NAME" = "pull_request_review" ] || [ "$EVENT_NAME" = "pull_request" ]; then
+            PR="$PR_NUMBER"
+            BRANCH="$PR_HEAD_REF"
+          elif [ "$EVENT_NAME" = "workflow_run" ]; then
+            BRANCH="$WR_HEAD_BRANCH"
+
+            # Verify gh auth before API calls (only needed for workflow_run path)
+            # GH_TOKEN env var is set by the workflow — gh CLI uses it for API calls
+            # but gh auth status does NOT detect it (checks keyring only). Check env instead.
+            if [ -z "$GH_TOKEN" ]; then
+              echo "::error::GH_TOKEN not set — cannot resolve PR for workflow_run"
+              exit 1
+            fi
+
+            # Find PR for this branch — same-owner only (uses gh --jq, no external jq needed)
+            pr_output=""
+            if ! pr_output=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open \
+              --json number,headRepositoryOwner \
+              --jq "[.[] | select(.headRepositoryOwner.login == \"$REPO_OWNER\")] | .[0].number // empty" 2>&1); then
+              echo "::warning::gh pr list failed: $pr_output"
+            else
+              PR="$pr_output"
+            fi
+          fi
+
+          if [ -z "$PR" ]; then
+            echo "No PR found — skipping"
+            exit 0
+          fi
+
+          # ── Skip non-foundry label events ──────────────────────────
+          if [ "$EVENT_NAME" = "pull_request" ] && [ "$EVENT_ACTION" = "labeled" ]; then
+            if [ "$LABEL_NAME" != "foundry" ]; then
+              echo "Label '$LABEL_NAME' added — not 'foundry', skipping"
+              exit 0
+            fi
+            echo "PR#$PR labeled 'foundry' — registering for local checks"
+          fi
+
+          echo "Gate triggered: $REPO PR#$PR branch=$BRANCH (event: $EVENT_NAME)"
+
+          # ── Look up task ID from local SQLite registry ─────────────
+          TASK_ID=""
+          if [ -f "$DB" ]; then
+            TASK_ID=$(sqlite3 "$DB" "SELECT id FROM tasks WHERE (pr LIKE '%/pull/' || CAST($PR AS TEXT) OR pr LIKE '%/' || CAST($PR AS TEXT)) AND status NOT IN ('merged','done','done-no-pr','killed','closed') LIMIT 1;" 2>/dev/null || true)
+          fi
+
+          if [ -z "$TASK_ID" ]; then
+            echo "No active task found for PR#$PR — running full check"
+            rc=0
+            bash "$FOUNDRY" check 2>&1 || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "::warning::foundry check exited with code $rc (state managed internally)"
+            fi
+            exit 0
+          fi
+
+          echo "Matched task: $TASK_ID"
+
+          # ── Log gate event in registry ─────────────────────────────
+          sqlite3 "$DB" "INSERT INTO events (task_id, event, details) VALUES ('$(echo "$TASK_ID" | tr -cd 'a-zA-Z0-9_-')', 'gate', 'GitHub event: $EVENT_NAME PR#$PR');" 2>/dev/null || true
+
+          # ── Run targeted check ─────────────────────────────────────
+          rc=0
+          bash "$FOUNDRY" check "$TASK_ID" 2>&1 || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::warning::foundry check '$TASK_ID' exited with code $rc (state managed internally)"
+          fi

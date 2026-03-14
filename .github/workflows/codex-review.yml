@@ -1,0 +1,136 @@
+# Codex Code Review — Portable CI Template
+# Requires: OPENAI_API_KEY secret in repo settings
+# Blocking: YES — VERDICT: ISSUES triggers REQUEST_CHANGES
+#
+# Deploy: copy to .github/workflows/codex-review.yml in any repo
+
+name: Codex Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: codex-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  codex-review:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      vars.DISABLE_CODEX_REVIEW != 'true'
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      final_message: ${{ steps.run_codex.outputs.final-message }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          fetch-depth: 0
+
+      - name: Generate PR diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr-diff.patch
+          echo "Diff size: $(wc -l < /tmp/pr-diff.patch) lines"
+
+      - name: Run Codex Code Review
+        id: run_codex
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt: |
+            This is PR #${{ github.event.pull_request.number }} for ${{ github.repository }}.
+            PR title: ${{ github.event.pull_request.title }}
+
+            The diff of ALL changes in this PR is saved to /tmp/pr-diff.patch.
+            Read that file to see EXACTLY what changed.
+
+            RULES:
+            - ONLY review code that appears in the diff. Do NOT explore
+              or comment on existing code outside the diff.
+            - Focus on: edge cases, logic errors, missing error handling,
+              race conditions, and security vulnerabilities.
+            - Do NOT flag style, formatting, or theoretical concerns.
+            - Be thorough but concise. Real bugs only.
+
+            IMPORTANT: End your review with EXACTLY one of these lines:
+            - VERDICT: CLEAN (no issues found)
+            - VERDICT: ISSUES (real bugs or vulnerabilities found)
+          sandbox: read-only
+          effort: high
+
+  post-review:
+    runs-on: ubuntu-latest
+    needs: codex-review
+    if: >-
+      needs.codex-review.outputs.final_message != '' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      pull-requests: write
+      checks: write
+    steps:
+      - name: Post Codex Review
+        uses: actions/github-script@v7
+        env:
+          CODEX_REVIEW: ${{ needs.codex-review.outputs.final_message }}
+        with:
+          script: |
+            const review = process.env.CODEX_REVIEW || '';
+            const body = `## Codex Review\n\n${review}`;
+            const isDraft = context.payload.pull_request.draft;
+
+            // Parse structured verdict line
+            const verdictMatch = review.match(/VERDICT:\s*(CLEAN|ISSUES)/i);
+
+            let event;
+            if (!verdictMatch) {
+              // No verdict found — fall back to COMMENT, don't auto-approve
+              event = 'COMMENT';
+            } else if (verdictMatch[1].toUpperCase() === 'ISSUES') {
+              event = 'REQUEST_CHANGES';
+            } else if (isDraft) {
+              // GitHub doesn't allow APPROVE on draft PRs (422)
+              event = 'COMMENT';
+            } else {
+              // Clean verdict — APPROVE clears any prior CHANGES_REQUESTED
+              event = 'APPROVE';
+            }
+
+            // Retry up to 3 times — GitHub API occasionally returns 500
+            for (let attempt = 1; attempt <= 3; attempt++) {
+              try {
+                await github.rest.pulls.createReview({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: context.payload.pull_request.number,
+                  body,
+                  event
+                });
+                break;
+              } catch (e) {
+                if (attempt === 3) throw e;
+                console.log(`Attempt ${attempt} failed (${e.status}), retrying in ${attempt * 5}s...`);
+                await new Promise(r => setTimeout(r, attempt * 5000));
+              }
+            }
+
+            // Create status check reflecting the verdict
+            const conclusion = event === 'REQUEST_CHANGES' ? 'failure'
+              : event === 'APPROVE' ? 'success' : 'neutral';
+            const title = event === 'REQUEST_CHANGES' ? 'Codex found issues'
+              : event === 'APPROVE' ? 'Codex approved' : 'Codex review (no verdict)';
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Codex Review Verdict',
+              head_sha: context.payload.pull_request.head.sha,
+              status: 'completed',
+              conclusion,
+              output: { title, summary: `Review event: ${event}` }
+            });
+

@@ -1,0 +1,189 @@
+# Gemini Code Review Check — Portable CI Template
+# Requires: Gemini Code Assist GitHub App installed on the repo (free)
+# Blocking: NO — advisory only, high-severity findings create a failed check
+#
+# IMPORTANT: Gemini only auto-reviews on PR open. It does NOT re-review on
+# subsequent pushes, and /gemini review retriggers are unreliable.
+# This workflow ONLY runs on opened/reopened.
+#
+# Deploy: copy to .github/workflows/gemini-check.yml in any repo
+
+name: Gemini Review Check
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened]
+
+concurrency:
+  group: gemini-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  gemini-check:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      pull-requests: read
+      checks: write
+
+    steps:
+      - name: Wait for Gemini review then check findings
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const headSha = context.payload.pull_request.head.sha;
+            const pushTimestamp = context.payload.pull_request.updated_at || new Date().toISOString();
+
+            // Check if PR has code files (Gemini can't review config/docs)
+            const prFiles = await github.paginate(
+              github.rest.pulls.listFiles,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber,
+                per_page: 100,
+              },
+            );
+            const codeExtensions = /\.(tsx?|jsx?|py|rb|go|rs|java|cs|cpp|c|h|swift|kt|vue|svelte|php)$/i;
+            const codeFiles = prFiles.filter(f => codeExtensions.test(f.filename));
+
+            if (codeFiles.length === 0) {
+              const skipSummary = `No code files in PR — skipped (${prFiles.length} file(s))`;
+              core.info(skipSummary);
+              await github.rest.checks.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: 'Gemini Code Review - Findings Check',
+                head_sha: headSha,
+                status: 'completed',
+                conclusion: 'success',
+                output: {
+                  title: skipSummary,
+                  summary: 'This PR only modifies config/workflow/docs files that Gemini Code Assist does not review.',
+                },
+              });
+              return;
+            }
+
+            core.info(`PR has ${codeFiles.length} code file(s): ${codeFiles.slice(0, 5).map(f => f.filename).join(', ')}`);
+
+            // Poll for Gemini review (30s intervals, 5 min timeout)
+            const MAX_WAIT_MS = 300_000;
+            const POLL_MS = 30_000;
+            const start = Date.now();
+            let geminiComments = [];
+
+            while (Date.now() - start < MAX_WAIT_MS) {
+              const allComments = await github.paginate(
+                github.rest.pulls.listReviewComments,
+                {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: prNumber,
+                  per_page: 100,
+                },
+              );
+
+              geminiComments = allComments.filter(
+                c => c.user.login.startsWith('gemini-code-assist')
+                  && c.created_at > pushTimestamp
+              );
+
+              if (geminiComments.length > 0) {
+                core.info(`Found ${geminiComments.length} Gemini comment(s) after ${Math.round((Date.now() - start) / 1000)}s`);
+                break;
+              }
+
+              // Check for a top-level Gemini review (summary = reviewed, no inline = clean)
+              const { data: reviews } = await github.rest.pulls.listReviews({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber,
+              });
+              const geminiReview = reviews.find(
+                r => r.user.login.startsWith('gemini-code-assist')
+                  && r.commit_id === headSha
+                  && r.submitted_at >= pushTimestamp
+              );
+              if (geminiReview) {
+                core.info(`Gemini review found, waiting 15s for inline comments to settle...`);
+                await new Promise(r => setTimeout(r, 15000));
+                const settledComments = await github.paginate(
+                  github.rest.pulls.listReviewComments,
+                  { owner: context.repo.owner, repo: context.repo.repo,
+                    pull_number: prNumber, per_page: 100 },
+                );
+                geminiComments = settledComments.filter(
+                  c => c.user.login.startsWith('gemini-code-assist')
+                    && c.created_at > pushTimestamp
+                );
+                core.info(`After settle: ${geminiComments.length} Gemini comment(s)`);
+                break;
+              }
+
+              core.info(`Waiting for Gemini review... (${Math.round((Date.now() - start) / 1000)}s elapsed)`);
+              await new Promise(r => setTimeout(r, POLL_MS));
+            }
+
+            // Parse severity from Gemini's image badges
+            let highCount = 0;
+            let mediumCount = 0;
+            let lowCount = 0;
+
+            for (const comment of geminiComments) {
+              const body = comment.body || '';
+              if (body.includes('high-priority.svg')) highCount++;
+              else if (body.includes('medium-priority.svg')) mediumCount++;
+              else if (body.includes('low-priority.svg')) lowCount++;
+              else mediumCount++; // unknown severity = medium
+            }
+
+            const totalFindings = highCount + mediumCount + lowCount;
+
+            // Determine conclusion
+            const geminiReviewed = geminiComments.length > 0
+              || (Date.now() - start < MAX_WAIT_MS);
+            let conclusion;
+            let summary;
+
+            if (!geminiReviewed && totalFindings === 0) {
+              conclusion = 'failure';
+              summary = 'Gemini timed out — no review received within 5 minutes';
+            } else if (highCount > 0) {
+              conclusion = 'failure';
+              summary = `${totalFindings} finding(s): ${highCount} high, ${mediumCount} medium, ${lowCount} low`;
+            } else {
+              conclusion = 'success';
+              summary = totalFindings === 0
+                ? 'No Gemini findings'
+                : `${totalFindings} finding(s): ${highCount} high, ${mediumCount} medium, ${lowCount} low`;
+            }
+
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Gemini Code Review - Findings Check',
+              head_sha: headSha,
+              status: 'completed',
+              conclusion,
+              output: {
+                title: summary,
+                summary: summary.includes('timed out')
+                    ? 'Gemini Code Assist did not post a review within 5 minutes on PR open. This needs investigation.'
+                  : totalFindings === 0
+                    ? 'Gemini Code Assist found no issues.'
+                    : `Gemini found ${totalFindings} issue(s).\n\n` +
+                      `- **High**: ${highCount}\n` +
+                      `- **Medium**: ${mediumCount}\n` +
+                      `- **Low**: ${lowCount}\n\n` +
+                      (highCount > 0
+                        ? 'High-severity findings must be addressed before merge.'
+                        : 'No high-severity findings. Medium/low are advisory.'),
+              },
+            });
+
+            core.info(`Gemini check: ${conclusion} (${summary})`);
+
