@@ -17,7 +17,7 @@
 #   - Workflow itself exits 0 to avoid noisy red X on PRs (this is a trigger, not a gate)
 #
 # Requires: GitHub Actions self-hosted runner with label "foundry"
-# Setup: bash ~/.openclaw/workspace/scripts/foundry/scripts/setup-runner.sh
+# Setup: see ~/.foundry/scripts/setup-runner.sh
 
 name: Foundry Gate
 
@@ -83,8 +83,8 @@ jobs:
           LABEL_NAME: ${{ github.event.label.name }}
           WR_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
-          FOUNDRY="$HOME/.openclaw/workspace/scripts/foundry/foundry"
-          DB="$HOME/.openclaw/workspace/scripts/foundry/foundry.db"
+          FOUNDRY="$HOME/.foundry/foundry"
+          DB="$HOME/.foundry/foundry.db"
 
           # ── Preflight: verify foundry binary exists ──────────────
           if [ ! -f "$FOUNDRY" ]; then
