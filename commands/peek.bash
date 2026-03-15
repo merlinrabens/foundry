@@ -44,32 +44,30 @@ cmd_peek() {
     steer_available="true"
   fi
 
-  # Read status.json if it exists (written by acp_orchestrator.py for legacy tasks)
-  local status_file="${FOUNDRY_DIR}/logs/${task_id}.status.json"
+  # Read live status from registry (primary) or .status.json (fallback)
   local phase="unknown" tools_used="[]" files_modified=0 last_tool="null" last_activity_ts=0 error="null"
 
-  if [ -f "$status_file" ]; then
-    # Legacy path: read from .status.json (written by acp_orchestrator.py)
-    phase=$(jq -r '.phase // "unknown"' "$status_file")
-    tools_used=$(jq -c '.tools_used // []' "$status_file")
-    files_modified=$(jq -r '.files_modified // 0' "$status_file")
-    last_tool=$(jq -r '.last_tool // "null"' "$status_file")
-    last_activity_ts=$(jq -r '.last_activity_ts // 0' "$status_file")
-    error=$(jq -r '.error // "null"' "$status_file")
-  elif [ -n "$session_id_peek" ] && [ "$session_id_peek" != "null" ]; then
-    # Native path: query session status from gateway
-    source "${FOUNDRY_DIR}/lib/session_bridge.bash" 2>/dev/null || true
-    if type oc_status &>/dev/null; then
-      local sess_info
-      sess_info=$(oc_status "$session_id_peek" 2>/dev/null)
-      local sess_alive
-      sess_alive=$(echo "$sess_info" | jq -r '.alive' 2>/dev/null)
-      if [ "$sess_alive" = "true" ]; then
-        phase="running"
-        last_activity_ts=$(echo "$sess_info" | jq -r '.updatedAt // 0' 2>/dev/null)
-      else
-        phase="completed"
-      fi
+  # Primary: live status from registry (written by orchestrator directly to SQLite)
+  local live_status=""
+  live_status=$(_db "SELECT json_extract(checks, '\$.liveStatus') FROM tasks WHERE id = '$(echo "$task_id" | sed "s/'/''/g")'" 2>/dev/null || echo "")
+
+  if [ -n "$live_status" ] && [ "$live_status" != "null" ]; then
+    phase=$(echo "$live_status" | jq -r '.phase // "unknown"')
+    tools_used=$(echo "$live_status" | jq -c '.tools_used // []')
+    files_modified=$(echo "$live_status" | jq -r '.files_modified // 0')
+    last_tool=$(echo "$live_status" | jq -r '.last_tool // "null"')
+    last_activity_ts=$(echo "$live_status" | jq -r '.last_activity_ts // 0')
+    error=$(echo "$live_status" | jq -r '.error // "null"')
+  else
+    # Fallback: .status.json (legacy orchestrator)
+    local status_file="${FOUNDRY_DIR}/logs/${task_id}.status.json"
+    if [ -f "$status_file" ]; then
+      phase=$(jq -r '.phase // "unknown"' "$status_file")
+      tools_used=$(jq -c '.tools_used // []' "$status_file")
+      files_modified=$(jq -r '.files_modified // 0' "$status_file")
+      last_tool=$(jq -r '.last_tool // "null"' "$status_file")
+      last_activity_ts=$(jq -r '.last_activity_ts // 0' "$status_file")
+      error=$(jq -r '.error // "null"' "$status_file")
     fi
   fi
 

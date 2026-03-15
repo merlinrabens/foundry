@@ -94,17 +94,13 @@ cmd_respawn() {
     }
   fi
 
-  # ── Prepare runner (native OpenClaw or legacy ACP orchestrator) ──
-  local use_native="${FOUNDRY_USE_NATIVE:-true}"
-
-  if [ "$use_native" != "true" ]; then
-    log "Regenerating runner script (legacy)..."
-    local env_block=""
-    [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ]   && env_block+="export OP_SERVICE_ACCOUNT_TOKEN='${OP_SERVICE_ACCOUNT_TOKEN}'"$'\n'
-    env_block+='[ -f "$HOME/.zprofile" ] && source "$HOME/.zprofile" 2>/dev/null'$'\n'
-    env_block+='[ -f "$HOME/.zshrc" ] && source "$HOME/.zshrc" 2>/dev/null'$'\n'
-    _write_runner_script "$agent" "$worktree" "$model" "$log_file" "$done_file" "$env_block" "high"
-  fi
+  # ── Regenerate runner script ──
+  log "Regenerating runner script..."
+  local env_block=""
+  [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ]   && env_block+="export OP_SERVICE_ACCOUNT_TOKEN='${OP_SERVICE_ACCOUNT_TOKEN}'"$'\n'
+  env_block+='[ -f "$HOME/.zprofile" ] && source "$HOME/.zprofile" 2>/dev/null'$'\n'
+  env_block+='[ -f "$HOME/.zshrc" ] && source "$HOME/.zshrc" 2>/dev/null'$'\n'
+  _write_runner_script "$agent" "$worktree" "$model" "$log_file" "$done_file" "$env_block" "high"
 
   # ── Gather failure context (delegated to lib/respawn_helpers.bash) ──
   local status
@@ -223,24 +219,9 @@ cmd_respawn() {
   registry_update_field "$task_id" "respawn_context" "$respawn_context"
 
   # Relaunch agent
-  local new_pid=""
-
-  if [ "$use_native" = "true" ]; then
-    # Native path: pre-generate session ID, spawn via OpenClaw ACPX
-    source "${FOUNDRY_DIR}/lib/session_bridge.bash"
-    local new_session_id
-    new_session_id=$(oc_gen_session_id)
-    local prompt_content
-    prompt_content=$(cat "$prompt_file")
-    new_pid=$(oc_spawn_bg "$new_session_id" "$agent" "$prompt_content" "$log_file" "$worktree" "${AGENT_TIMEOUT:-1800}")
-    registry_update_field "$task_id" "sessionId" "$new_session_id"
-    log "Session: $new_session_id"
-  else
-    # Legacy path: ACP orchestrator via runner script
-    nohup bash "${worktree}/.foundry-run.sh" \
-      > "${log_file}.stderr" 2>&1 &
-    new_pid=$!
-  fi
+  nohup bash "${worktree}/.foundry-run.sh" \
+    > "${log_file}.stderr" 2>&1 &
+  local new_pid=$!
 
   echo "$new_pid" > "${FOUNDRY_DIR}/logs/${task_id}.pid"
   registry_update_field "$task_id" "pid" "$new_pid"

@@ -220,17 +220,24 @@ cmd_check() {
       continue
     fi
 
-    # 0.5 Native session: check completion via done file OR session status
-    # For native tasks, the background process writes .done when openclaw agent exits.
-    # We also have the session_id for steer/ask, but completion detection still uses .done.
-    # This is intentional: .done is a local, fast, zero-cost check. oc_status requires
-    # a gateway RPC call (slower, requires auth). We use oc_status only for liveness
-    # when .done doesn't exist yet (agent still running).
+    # 1. Agent finished? Check registry first (primary), .done file as fallback.
+    # The orchestrator writes completion status directly to SQLite registry.
+    # The .done file is a fallback for edge cases where the DB write failed.
+    local db_status=""
+    db_status=$(_db "SELECT status FROM tasks WHERE id = '$(echo "$id" | sed "s/'/''/g")'" 2>/dev/null || echo "")
+    local is_completed=0
+    local exit_code=""
 
-    # 1. Agent finished? (done marker exists)
-    if [ -f "$done_file" ]; then
-      local exit_code
+    if [ "$db_status" = "completed" ] || [ "$db_status" = "failed" ]; then
+      is_completed=1
+      [ "$db_status" = "completed" ] && exit_code="0" || exit_code="1"
+    elif [ -f "$done_file" ]; then
+      # Fallback: .done file exists but registry wasn't updated
+      is_completed=1
       exit_code=$(cat "$done_file")
+    fi
+
+    if [ "$is_completed" -eq 1 ]; then
 
       if [ "$exit_code" = "0" ]; then
         # Check for PR — first check registry (survives worktree pruning), then gh

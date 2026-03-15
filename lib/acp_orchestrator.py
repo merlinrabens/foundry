@@ -373,7 +373,7 @@ class ACPOrchestrator:
                 phase = self._detect_phase(name)
                 if phase:
                     self._phase = phase
-                self._write_status()
+                self.write_status()
         elif update_type == "tool_call_update":
             content = update.get("content", "")
             if content and self._log_fh:
@@ -505,7 +505,7 @@ class ACPOrchestrator:
                         break
 
             self._phase = "done" if exit_code == 0 else "failed"
-            self._write_status()
+            self.write_status()
             self._log("Phase set, cleaning up adapter process...")
 
             # Shut down the adapter process.
@@ -599,9 +599,69 @@ class ACPOrchestrator:
             return 0  # Don't fail on preflight infrastructure errors
 
     def write_done(self, exit_code: int):
-        """Write exit code to .done file (backward compat with check loop)."""
+        """Signal completion via SQLite registry (primary) and .done file (compat).
+
+        The registry update is the authoritative signal. check.bash reads
+        the registry first. The .done file is kept as a belt-and-suspenders
+        fallback for edge cases where the DB write fails.
+        """
+        task_id = self._derive_task_id()
+        final_status = "completed" if exit_code == 0 else "failed"
+
+        # Primary: update SQLite registry
+        db_path = Path(self.foundry_dir) / "foundry.db"
+        if db_path.exists() and task_id:
+            try:
+                import sqlite3
+                conn = sqlite3.connect(str(db_path), timeout=5)
+                now = int(time.time())
+                conn.execute(
+                    "UPDATE tasks SET status = ?, completed_at = ? WHERE id = ? AND status = 'running'",
+                    (final_status, now, task_id),
+                )
+                conn.commit()
+                conn.close()
+                self._log(f"Registry updated: {task_id} -> {final_status}")
+            except Exception as e:
+                self._log(f"Registry update failed: {e}, falling back to .done file")
+
+        # Fallback: .done file (kept for backward compat)
         Path(self.done_file).write_text(str(exit_code))
         self._log(f"Wrote exit code {exit_code} to {self.done_file}")
+
+    def write_status(self):
+        """Write live status to SQLite registry instead of .status.json file."""
+        task_id = self._derive_task_id()
+        db_path = Path(self.foundry_dir) / "foundry.db"
+        if not db_path.exists() or not task_id:
+            # Fallback: write .status.json for legacy compat
+            self.write_status()
+            return
+
+        try:
+            import sqlite3
+            status_json = json.dumps({
+                "phase": self._phase,
+                "tools_used": list(set(self._tools_used)),
+                "files_modified": self._files_modified,
+                "last_tool": self._last_tool,
+                "last_activity_ts": int(time.time()),
+                "error": self._error,
+            })
+            conn = sqlite3.connect(str(db_path), timeout=5)
+            conn.execute(
+                "UPDATE tasks SET checks = json_set(checks, '$.liveStatus', json(?)) WHERE id = ?",
+                (status_json, task_id),
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            # Fallback to .status.json
+            self.write_status()
+
+    def _derive_task_id(self) -> str:
+        """Derive task ID from done_file path (e.g., logs/my-task.done -> my-task)."""
+        return Path(self.done_file).stem if self.done_file else ""
 
     def close(self):
         """Clean up resources."""

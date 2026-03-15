@@ -314,32 +314,15 @@ ${pr_body_instructions}"
   env_block+='[ -f "$HOME/.zprofile" ] && source "$HOME/.zprofile" 2>/dev/null'$'\n'
   env_block+='[ -f "$HOME/.zshrc" ] && source "$HOME/.zshrc" 2>/dev/null'$'\n'
 
-  # ── Launch agent (native OpenClaw or legacy ACP orchestrator) ──
-  local use_native="${FOUNDRY_USE_NATIVE:-true}"
-  local agent_pid=""
-  local session_id=""
+  # ── Write runner script + Launch agent ──
+  _write_runner_script "$agent_backend" "$worktree_dir" "$model" "$log_file" "$done_file" "$env_block" "$codex_reasoning"
 
-  if [ "$use_native" = "true" ]; then
-    # Native path: pre-generate session ID, spawn via OpenClaw ACPX
-    source "${FOUNDRY_DIR}/lib/session_bridge.bash"
-    session_id=$(oc_gen_session_id)
-    local prompt_content
-    prompt_content=$(cat "$prompt_file")
-
-    log "Launching agent (native): ${task_id}"
-    log "  Session: $session_id"
-    agent_pid=$(oc_spawn_bg "$session_id" "$agent_backend" "$prompt_content" "$log_file" "$worktree_dir" "${AGENT_TIMEOUT:-1800}")
-    log "  PID: $agent_pid"
-  else
-    # Legacy path: ACP orchestrator via runner script
-    _write_runner_script "$agent_backend" "$worktree_dir" "$model" "$log_file" "$done_file" "$env_block" "$codex_reasoning"
-    log "Launching agent (legacy): ${task_id}"
-    nohup bash "${worktree_dir}/.foundry-run.sh" \
-      > "${log_file}.stderr" 2>&1 &
-    agent_pid=$!
-    log "  PID: $agent_pid"
-  fi
+  log "Launching agent: ${task_id}"
+  nohup bash "${worktree_dir}/.foundry-run.sh" \
+    > "${log_file}.stderr" 2>&1 &
+  local agent_pid=$!
   echo "$agent_pid" > "${FOUNDRY_DIR}/logs/${task_id}.pid"
+  log "  PID: $agent_pid"
 
   # ── Register task ──
   local now
@@ -358,7 +341,6 @@ ${pr_body_instructions}"
     --arg spec "$spec_or_task" \
     --arg desc "$task_name" \
     --argjson started "$now" \
-    --arg sessionId "${session_id:-}" \
     '{
       id: $id,
       repo: $repo,
@@ -376,7 +358,6 @@ ${pr_body_instructions}"
       attempts: 1,
       maxAttempts: ($ENV.MAX_RETRIES // "5" | tonumber),
       pr: null,
-      sessionId: (if $sessionId == "" then null else $sessionId end),
       checks: {
         agentAlive: true,
         prCreated: false,
@@ -441,7 +422,6 @@ Repo: $project_name"
   log "  Branch:    $branch_name"
   log "  Model:     $model"
   log "  PID:       $agent_pid"
-  [ -n "$session_id" ] && log "  Session:   $session_id"
   [ -n "$tg_topic_id" ] && log "  TG Topic:  $tg_topic_id"
   log "  Log:       tail -f $log_file"
   echo ""
