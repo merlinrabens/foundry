@@ -529,15 +529,42 @@ class ACPOrchestrator:
 
             self._phase = "done" if exit_code == 0 else "failed"
             self._write_status()
+            self._log("Phase set, cleaning up adapter process...")
 
-            # Wait for process to finish
+            # Shut down the adapter process.
+            # openclaw acp (Node.js) keeps a WebSocket to the gateway and may
+            # ignore SIGTERM. Close pipes first (unblocks process.wait), then
+            # terminate/kill.
             if self.process.returncode is None:
+                self._log("Closing adapter pipes...")
+                if self.process.stdin and not self.process.stdin.is_closing():
+                    self.process.stdin.close()
+                # Drain remaining stdout/stderr to prevent pipe buffer deadlock
+                try:
+                    if self.process.stdout:
+                        await asyncio.wait_for(self.process.stdout.read(), timeout=2)
+                except (asyncio.TimeoutError, Exception):
+                    pass
+                try:
+                    if self.process.stderr:
+                        await asyncio.wait_for(self.process.stderr.read(), timeout=2)
+                except (asyncio.TimeoutError, Exception):
+                    pass
+
+                self._log("Sending SIGTERM...")
                 self.process.terminate()
                 try:
-                    await asyncio.wait_for(self.process.wait(), timeout=15)
+                    await asyncio.wait_for(self.process.wait(), timeout=3)
                 except asyncio.TimeoutError:
+                    self._log("SIGTERM ignored, sending SIGKILL...")
                     self.process.kill()
-                    await self.process.wait()
+                    try:
+                        await asyncio.wait_for(self.process.wait(), timeout=3)
+                    except asyncio.TimeoutError:
+                        self._log("SIGKILL wait timed out, proceeding anyway")
+                self._log(f"Adapter exited (rc={self.process.returncode})")
+            else:
+                self._log(f"Adapter already exited (rc={self.process.returncode})")
 
             return exit_code
 
