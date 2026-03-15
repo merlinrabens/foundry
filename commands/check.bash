@@ -220,6 +220,13 @@ cmd_check() {
       continue
     fi
 
+    # 0.5 Native session: check completion via done file OR session status
+    # For native tasks, the background process writes .done when openclaw agent exits.
+    # We also have the session_id for steer/ask, but completion detection still uses .done.
+    # This is intentional: .done is a local, fast, zero-cost check. oc_status requires
+    # a gateway RPC call (slower, requires auth). We use oc_status only for liveness
+    # when .done doesn't exist yet (agent still running).
+
     # 1. Agent finished? (done marker exists)
     if [ -f "$done_file" ]; then
       local exit_code
@@ -338,11 +345,31 @@ cmd_check() {
       fi
     fi
 
-    # 2. Agent process alive? (PID-based liveness)
+    # 2. Agent process alive? (session-based or PID-based liveness)
     local agent_alive=0
     local task_pid
     task_pid=$(echo "$task" | jq -r '.pid // empty')
-    if [ -n "$task_pid" ] && [ "$task_pid" != "null" ]; then
+
+    # Native path: PID check first (fast), fall back to oc_status (accurate)
+    local task_session_id
+    task_session_id=$(echo "$task" | jq -r '.sessionId // empty')
+    if [ -n "$task_session_id" ] && [ "$task_session_id" != "null" ]; then
+      # Fast check: background process still running?
+      if [ -n "$task_pid" ] && [ "$task_pid" != "null" ] && kill -0 "$task_pid" 2>/dev/null; then
+        agent_alive=1
+      else
+        # PID gone but no .done file? Query gateway session status
+        source "${FOUNDRY_DIR}/lib/session_bridge.bash" 2>/dev/null || true
+        if type oc_status &>/dev/null; then
+          local sess_status
+          sess_status=$(oc_status "$task_session_id" 2>/dev/null)
+          local sess_alive
+          sess_alive=$(echo "$sess_status" | jq -r '.alive' 2>/dev/null)
+          [ "$sess_alive" = "true" ] && agent_alive=1
+        fi
+      fi
+    elif [ -n "$task_pid" ] && [ "$task_pid" != "null" ]; then
+      # Legacy path: PID-based liveness only
       kill -0 "$task_pid" 2>/dev/null && agent_alive=1
     fi
 

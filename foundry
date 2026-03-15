@@ -61,6 +61,7 @@ case "$cmd" in
   kill|k)             source "${FOUNDRY_DIR}/commands/lifecycle.bash"; cmd_kill "$@" ;;
   steer)              source "${FOUNDRY_DIR}/commands/lifecycle.bash"; cmd_steer "$@" ;;
   steer-wait|sw)      source "${FOUNDRY_DIR}/commands/lifecycle.bash"; cmd_steer_wait "$@" ;;
+  ask)                source "${FOUNDRY_DIR}/commands/ask.bash";       cmd_ask "$@" ;;
   open|o)             source "${FOUNDRY_DIR}/commands/lifecycle.bash"; cmd_open "$@" ;;
   orchestrate|orch)   source "${FOUNDRY_DIR}/commands/orchestrate.bash"; cmd_orchestrate "$@" ;;
   peek|p)             source "${FOUNDRY_DIR}/commands/peek.bash"; cmd_peek "$@" ;;

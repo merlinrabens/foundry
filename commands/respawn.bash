@@ -94,17 +94,17 @@ cmd_respawn() {
     }
   fi
 
-  # ── Always regenerate runner script (ensures fresh token refresh + template fixes) ──
-  log "Regenerating runner script..."
-  local env_block=""
-  # Auth: backends use cached OAuth sign-in. API keys NOT baked (would override OAuth).
-  [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ]   && env_block+="export OP_SERVICE_ACCOUNT_TOKEN='${OP_SERVICE_ACCOUNT_TOKEN}'"$'\n'
-  # NOTE: Do NOT bake GH_TOKEN or GITHUB_TOKEN — they are short-lived
-  # GitHub Actions installation tokens (ghs_) that expire and then override
-  # the valid keyring auth. Agents use gh's keyring auth instead.
-  env_block+='[ -f "$HOME/.zprofile" ] && source "$HOME/.zprofile" 2>/dev/null'$'\n'
-  env_block+='[ -f "$HOME/.zshrc" ] && source "$HOME/.zshrc" 2>/dev/null'$'\n'
-  _write_runner_script "$agent" "$worktree" "$model" "$log_file" "$done_file" "$env_block" "high"
+  # ── Prepare runner (native OpenClaw or legacy ACP orchestrator) ──
+  local use_native="${FOUNDRY_USE_NATIVE:-true}"
+
+  if [ "$use_native" != "true" ]; then
+    log "Regenerating runner script (legacy)..."
+    local env_block=""
+    [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ]   && env_block+="export OP_SERVICE_ACCOUNT_TOKEN='${OP_SERVICE_ACCOUNT_TOKEN}'"$'\n'
+    env_block+='[ -f "$HOME/.zprofile" ] && source "$HOME/.zprofile" 2>/dev/null'$'\n'
+    env_block+='[ -f "$HOME/.zshrc" ] && source "$HOME/.zshrc" 2>/dev/null'$'\n'
+    _write_runner_script "$agent" "$worktree" "$model" "$log_file" "$done_file" "$env_block" "high"
+  fi
 
   # ── Gather failure context (delegated to lib/respawn_helpers.bash) ──
   local status
@@ -183,13 +183,20 @@ cmd_respawn() {
     (cd "$worktree" 2>/dev/null && gh pr edit --remove-label "ready-for-evidence" 2>/dev/null) || true
   fi
 
-  # ── Clean up old process ──
+  # ── Clean up old process/session ──
+  # Cancel native session if exists
+  local old_session_id
+  old_session_id=$(echo "$task" | jq -r '.sessionId // empty')
+  if [ -n "$old_session_id" ] && [ "$old_session_id" != "null" ]; then
+    source "${FOUNDRY_DIR}/lib/session_bridge.bash"
+    oc_cancel "$old_session_id" 2>/dev/null || true
+  fi
+
   local old_pid
   old_pid=$(echo "$task" | jq -r '.pid // empty')
   [ "$old_pid" = "null" ] && old_pid=""
 
   if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
-    # ACP mode: kill by PID
     kill -TERM "$old_pid" 2>/dev/null || true
     sleep 2
     kill -0 "$old_pid" 2>/dev/null && kill -KILL "$old_pid" 2>/dev/null || true
@@ -216,9 +223,25 @@ cmd_respawn() {
   registry_update_field "$task_id" "respawn_context" "$respawn_context"
 
   # Relaunch agent
-  nohup bash "${worktree}/.foundry-run.sh" \
-    > "${log_file}.stderr" 2>&1 &
-  local new_pid=$!
+  local new_pid=""
+
+  if [ "$use_native" = "true" ]; then
+    # Native path: pre-generate session ID, spawn via OpenClaw ACPX
+    source "${FOUNDRY_DIR}/lib/session_bridge.bash"
+    local new_session_id
+    new_session_id=$(oc_gen_session_id)
+    local prompt_content
+    prompt_content=$(cat "$prompt_file")
+    new_pid=$(oc_spawn_bg "$new_session_id" "$agent" "$prompt_content" "$log_file" "$worktree" "${AGENT_TIMEOUT:-1800}")
+    registry_update_field "$task_id" "sessionId" "$new_session_id"
+    log "Session: $new_session_id"
+  else
+    # Legacy path: ACP orchestrator via runner script
+    nohup bash "${worktree}/.foundry-run.sh" \
+      > "${log_file}.stderr" 2>&1 &
+    new_pid=$!
+  fi
+
   echo "$new_pid" > "${FOUNDRY_DIR}/logs/${task_id}.pid"
   registry_update_field "$task_id" "pid" "$new_pid"
   log "Agent PID: $new_pid"

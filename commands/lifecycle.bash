@@ -40,7 +40,16 @@ cmd_kill() {
   task=$(registry_get_task "$task_id")
   local killed=0
 
-  # PID-based kill
+  # Native path: cancel session if task has sessionId
+  local sid
+  sid=$(echo "$task" | jq -r '.sessionId // empty')
+  if [ -n "$sid" ] && [ "$sid" != "null" ]; then
+    source "${FOUNDRY_DIR}/lib/session_bridge.bash"
+    oc_cancel "$sid"
+    killed=1
+  fi
+
+  # PID-based kill (works for both native and legacy)
   local pid
   pid=$(echo "$task" | jq -r '.pid // empty')
   if [ -n "$pid" ] && [ "$pid" != "null" ] && kill -0 "$pid" 2>/dev/null; then
@@ -54,7 +63,6 @@ cmd_kill() {
     registry_update_field "$task_id" "status" "killed"
     log_ok "Killed: $task_id"
   else
-    # Mark as killed even if no process found (cleanup)
     registry_update_field "$task_id" "status" "killed"
     log_warn "No running process found for $task_id (marked as killed)"
   fi
@@ -110,7 +118,19 @@ cmd_steer() {
   local task
   task=$(registry_get_task "$task_id")
 
-  # Write steer file + signal orchestrator via USR1
+  # Native path: use oc_send if task has sessionId
+  local sid
+  sid=$(echo "$task" | jq -r '.sessionId // empty')
+  if [ -n "$sid" ] && [ "$sid" != "null" ]; then
+    source "${FOUNDRY_DIR}/lib/session_bridge.bash"
+    local reply
+    reply=$(oc_send "$sid" "$message" 30)
+    log_ok "Sent steer to $task_id (session: $sid)"
+    [ -n "$reply" ] && echo "$reply"
+    return 0
+  fi
+
+  # Legacy path: write steer file + signal orchestrator via USR1
   local pid
   pid=$(echo "$task" | jq -r '.pid // empty')
   if [ -n "$pid" ] && [ "$pid" != "null" ] && kill -0 "$pid" 2>/dev/null; then

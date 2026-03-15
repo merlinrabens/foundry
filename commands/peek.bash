@@ -29,25 +29,48 @@ cmd_peek() {
   now=$(date +%s)
   elapsed_min=$(( (now - started_at) / 60 ))
 
-  # Check if steer is available (PID alive)
+  # Check if steer is available (PID alive or session active)
   local steer_available="false"
-  local pid
+  local pid session_id_peek
   pid=$(echo "$task" | jq -r '.pid // empty')
-  if [ -n "$pid" ] && [ "$pid" != "null" ] && kill -0 "$pid" 2>/dev/null; then
+  session_id_peek=$(echo "$task" | jq -r '.sessionId // empty')
+
+  if [ -n "$session_id_peek" ] && [ "$session_id_peek" != "null" ]; then
+    # Native path: steer available if background process is alive
+    if [ -n "$pid" ] && [ "$pid" != "null" ] && kill -0 "$pid" 2>/dev/null; then
+      steer_available="true"
+    fi
+  elif [ -n "$pid" ] && [ "$pid" != "null" ] && kill -0 "$pid" 2>/dev/null; then
     steer_available="true"
   fi
 
-  # Read status.json if it exists (written by acp_orchestrator.py)
+  # Read status.json if it exists (written by acp_orchestrator.py for legacy tasks)
   local status_file="${FOUNDRY_DIR}/logs/${task_id}.status.json"
   local phase="unknown" tools_used="[]" files_modified=0 last_tool="null" last_activity_ts=0 error="null"
 
   if [ -f "$status_file" ]; then
+    # Legacy path: read from .status.json (written by acp_orchestrator.py)
     phase=$(jq -r '.phase // "unknown"' "$status_file")
     tools_used=$(jq -c '.tools_used // []' "$status_file")
     files_modified=$(jq -r '.files_modified // 0' "$status_file")
     last_tool=$(jq -r '.last_tool // "null"' "$status_file")
     last_activity_ts=$(jq -r '.last_activity_ts // 0' "$status_file")
     error=$(jq -r '.error // "null"' "$status_file")
+  elif [ -n "$session_id_peek" ] && [ "$session_id_peek" != "null" ]; then
+    # Native path: query session status from gateway
+    source "${FOUNDRY_DIR}/lib/session_bridge.bash" 2>/dev/null || true
+    if type oc_status &>/dev/null; then
+      local sess_info
+      sess_info=$(oc_status "$session_id_peek" 2>/dev/null)
+      local sess_alive
+      sess_alive=$(echo "$sess_info" | jq -r '.alive' 2>/dev/null)
+      if [ "$sess_alive" = "true" ]; then
+        phase="running"
+        last_activity_ts=$(echo "$sess_info" | jq -r '.updatedAt // 0' 2>/dev/null)
+      else
+        phase="completed"
+      fi
+    fi
   fi
 
   # Merge into structured output

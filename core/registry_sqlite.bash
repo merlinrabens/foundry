@@ -91,6 +91,13 @@ _registry_db_migrate() {
   if [ "${has_topic_col:-0}" -eq 0 ]; then
     sqlite3 "$REGISTRY_DB" "ALTER TABLE tasks ADD COLUMN tg_topic_id TEXT;" 2>/dev/null || true
   fi
+
+  # Add session_id column for native OpenClaw session tracking (replaces PID-based tracking)
+  local has_session_id_col
+  has_session_id_col=$(sqlite3 "$REGISTRY_DB" "PRAGMA table_info(tasks);" 2>/dev/null | grep -c 'session_id' || true)
+  if [ "${has_session_id_col:-0}" -eq 0 ]; then
+    sqlite3 "$REGISTRY_DB" "ALTER TABLE tasks ADD COLUMN session_id TEXT;" 2>/dev/null || true
+  fi
 }
 _registry_db_migrate
 
@@ -137,6 +144,7 @@ _rows_to_legacy_json() {
       completedAt: .completed_at,
       lastCheckedAt: .last_checked_at,
       openclawSession: .openclaw_session,
+      sessionId: .session_id,
       tgTopicId: .tg_topic_id
     }]'
 }
@@ -208,6 +216,8 @@ _registry_insert_task_json() {
   completed_at=$(echo "$t" | jq -r '.completedAt // .completed_at // ""')
   last_checked_at=$(echo "$t" | jq -r '.lastCheckedAt // .last_checked_at // ""')
   tg_topic_id=$(echo "$t" | jq -r '.tgTopicId // .tg_topic_id // ""')
+  local session_id
+  session_id=$(echo "$t" | jq -r '.sessionId // .session_id // ""')
 
   # Normalize nulls/empty to SQL-friendly values
   [ "$pid" = "null" ] || [ "$pid" = "" ] && pid=""
@@ -221,13 +231,14 @@ _registry_insert_task_json() {
   [ "$failure_reason" = "null" ] && failure_reason=""
   [ "$last_notified_state" = "null" ] && last_notified_state=""
   [ "$tg_topic_id" = "null" ] && tg_topic_id=""
+  [ "$session_id" = "null" ] && session_id=""
 
   _db "INSERT OR REPLACE INTO tasks (
     id, repo, repo_path, worktree, branch, tmux_session, pid, agent, model,
     spec, description, status, pr, pr_url, attempts, max_attempts,
     review_fix_attempts, max_review_fixes, gemini_addressed, notify_on_complete,
     last_notified_state, failure_reason, respawn_context, checks,
-    started_at, completed_at, last_checked_at, tg_topic_id
+    started_at, completed_at, last_checked_at, tg_topic_id, session_id
   ) VALUES (
     '$(echo "$id" | sed "s/'/''/g")',
     '$(echo "$repo" | sed "s/'/''/g")',
@@ -252,7 +263,8 @@ _registry_insert_task_json() {
     $([ -n "$started_at" ] && echo "$started_at" || echo "NULL"),
     $([ -n "$completed_at" ] && echo "$completed_at" || echo "NULL"),
     $([ -n "$last_checked_at" ] && echo "$last_checked_at" || echo "NULL"),
-    $([ -n "$tg_topic_id" ] && echo "'$(echo "$tg_topic_id" | sed "s/'/''/g")'" || echo "NULL")
+    $([ -n "$tg_topic_id" ] && echo "'$(echo "$tg_topic_id" | sed "s/'/''/g")'" || echo "NULL"),
+    $([ -n "$session_id" ] && echo "'$(echo "$session_id" | sed "s/'/''/g")'" || echo "NULL")
   );"
 }
 
@@ -281,6 +293,7 @@ _field_to_column() {
     failureReason)       echo "failure_reason" ;;
     respawnContext)      echo "respawn_context" ;;
     openclawSession)     echo "openclaw_session" ;;
+    sessionId)           echo "session_id" ;;
     tgTopicId)           echo "tg_topic_id" ;;
     startedAt)           echo "started_at" ;;
     completedAt)         echo "completed_at" ;;
