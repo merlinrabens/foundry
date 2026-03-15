@@ -30,16 +30,37 @@ from pathlib import Path
 # Seconds to wait for non-JSON startup output to drain before first JSON-RPC call.
 STARTUP_DRAIN_TIMEOUT = 10
 
-# ACP adapter binaries per backend
+# ACP adapter binaries per backend (legacy direct mode)
 ACP_ADAPTERS = {
     "claude": "claude-agent-acp",
     "codex": "codex-acp",
     "gemini": "gemini",  # Gemini CLI has native ACP support
 }
 
+# OpenClaw gateway password file for native ACPX mode
+_OC_PW_FILE = Path.home() / ".openclaw" / ".gw-password"
 
-def get_adapter_args(backend: str, model: str, worktree: str) -> list[str]:
-    """Build command-line args for the ACP adapter."""
+
+def get_adapter_args(backend: str, model: str, worktree: str, task_id: str = "") -> list[str]:
+    """Build command-line args for the ACP adapter.
+
+    Native mode (FOUNDRY_USE_NATIVE=true): routes through OpenClaw gateway.
+    The gateway manages the session, tracks tokens, enables steer/ask/status.
+
+    Legacy mode: starts the agent binary directly (codex-acp, claude-agent-acp).
+    """
+    use_native = os.environ.get("FOUNDRY_USE_NATIVE", "true")
+
+    if use_native == "true" and _OC_PW_FILE.exists():
+        session_key = f"agent:main:acp:foundry-{task_id}" if task_id else "agent:main:acp:foundry"
+        return [
+            "openclaw", "acp",
+            "--session", session_key,
+            "--password-file", str(_OC_PW_FILE),
+            "--no-prefix-cwd",
+        ]
+
+    # Legacy: direct adapter binary
     match backend:
         case "codex":
             return [
@@ -395,7 +416,9 @@ class ACPOrchestrator:
 
     async def run(self) -> int:
         """Execute the agent and return exit code."""
-        adapter_cmd = get_adapter_args(self.backend, self.model, self.worktree)
+        # Derive task_id from done_file path (e.g., logs/aura-shopify-issue-946.done → aura-shopify-issue-946)
+        task_id = Path(self.done_file).stem if self.done_file else ""
+        adapter_cmd = get_adapter_args(self.backend, self.model, self.worktree, task_id)
 
         # Merge environment
         env = os.environ.copy()
