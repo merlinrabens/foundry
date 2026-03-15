@@ -314,27 +314,32 @@ ${pr_body_instructions}"
   env_block+='[ -f "$HOME/.zprofile" ] && source "$HOME/.zprofile" 2>/dev/null'$'\n'
   env_block+='[ -f "$HOME/.zshrc" ] && source "$HOME/.zshrc" 2>/dev/null'$'\n'
 
-  # ── Write runner script + Launch agent ──
-  # Both native (ACPX via gateway) and legacy (direct adapter) use the same
-  # runner script + acp_orchestrator.py. The difference is inside get_adapter_args():
-  # native mode spawns `openclaw acp --session ...` as the ACP subprocess,
-  # legacy mode spawns `codex-acp` / `claude-agent-acp` directly.
-  _write_runner_script "$agent_backend" "$worktree_dir" "$model" "$log_file" "$done_file" "$env_block" "$codex_reasoning"
-
-  log "Launching agent: ${task_id}"
-  nohup bash "${worktree_dir}/.foundry-run.sh" \
-    > "${log_file}.stderr" 2>&1 &
-  local agent_pid=$!
-  echo "$agent_pid" > "${FOUNDRY_DIR}/logs/${task_id}.pid"
-  log "  PID: $agent_pid"
-
-  # For native mode, derive the session key for registry
-  local session_id=""
+  # ── Launch agent (native OpenClaw or legacy ACP orchestrator) ──
   local use_native="${FOUNDRY_USE_NATIVE:-true}"
+  local agent_pid=""
+  local session_id=""
+
   if [ "$use_native" = "true" ]; then
-    session_id="agent:main:acp:foundry-${task_id}"
+    # Native path: pre-generate session ID, spawn via OpenClaw ACPX
+    source "${FOUNDRY_DIR}/lib/session_bridge.bash"
+    session_id=$(oc_gen_session_id)
+    local prompt_content
+    prompt_content=$(cat "$prompt_file")
+
+    log "Launching agent (native): ${task_id}"
     log "  Session: $session_id"
+    agent_pid=$(oc_spawn_bg "$session_id" "$agent_backend" "$prompt_content" "$log_file" "$worktree_dir" "${AGENT_TIMEOUT:-1800}")
+    log "  PID: $agent_pid"
+  else
+    # Legacy path: ACP orchestrator via runner script
+    _write_runner_script "$agent_backend" "$worktree_dir" "$model" "$log_file" "$done_file" "$env_block" "$codex_reasoning"
+    log "Launching agent (legacy): ${task_id}"
+    nohup bash "${worktree_dir}/.foundry-run.sh" \
+      > "${log_file}.stderr" 2>&1 &
+    agent_pid=$!
+    log "  PID: $agent_pid"
   fi
+  echo "$agent_pid" > "${FOUNDRY_DIR}/logs/${task_id}.pid"
 
   # ── Register task ──
   local now
