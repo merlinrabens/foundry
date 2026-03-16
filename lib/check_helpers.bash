@@ -195,12 +195,23 @@ _try_respawn_or_exhaust() {
   local pr_url="${10:-}"
 
   if [ "$attempts" -lt "$max_attempts" ]; then
-    # Exponential backoff: 30s, 60s, 120s, 240s between respawns
-    # Prevents burning all retries in seconds when agents crash immediately
+    # Exponential backoff via registry timestamp (no sleep, non-blocking).
+    # Records next_respawn_at in registry. Check skips respawn until that time passes.
     local backoff_secs=$(( 30 * (1 << (attempts > 4 ? 4 : attempts)) ))
     [ "$backoff_secs" -gt 300 ] && backoff_secs=300
-    log_warn "  Auto-respawning (attempt $((attempts + 1))/$max_attempts) after ${backoff_secs}s backoff..."
-    sleep "$backoff_secs"
+    local now_ts
+    now_ts=$(date +%s)
+    local next_respawn_at
+    next_respawn_at=$(_db "SELECT json_extract(checks, '\$.nextRespawnAt') FROM tasks WHERE id = '$(echo "$task_id" | sed "s/'/''/g")'" 2>/dev/null || echo "0")
+    [ -z "$next_respawn_at" ] || [ "$next_respawn_at" = "null" ] && next_respawn_at=0
+    if [ "$now_ts" -lt "$next_respawn_at" ]; then
+      local wait_remaining=$(( next_respawn_at - now_ts ))
+      log_warn "  Respawn backoff: ${wait_remaining}s remaining (next at $(date -r "$next_respawn_at" '+%H:%M:%S' 2>/dev/null || echo "$next_respawn_at"))"
+      return 2  # Signal: not yet, try again later
+    fi
+    # Set next backoff window
+    _db "UPDATE tasks SET checks = json_set(checks, '\$.nextRespawnAt', $((now_ts + backoff_secs))) WHERE id = '$(echo "$task_id" | sed "s/'/''/g")'" 2>/dev/null
+    log_warn "  Auto-respawning (attempt $((attempts + 1))/$max_attempts, backoff ${backoff_secs}s)..."
     # No TG notification for intermediate respawn cycles — only notify on exhaustion or ready
     if cmd_respawn "$task_id"; then
       return 0
