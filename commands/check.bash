@@ -54,12 +54,16 @@ _check_pr_status() {
     # Wait for all reviewers before starting fix cycle (collect ALL feedback first)
     if [ "${_PR_ALL_REVIEWS_IN:-0}" -eq 0 ]; then
       echo -e "${BLUE}Changes requested, waiting for remaining reviews [$_PR_CHECKS_SUMMARY]${NC}"
-      # No notification for intermediate "waiting" state — reduces noise
       return 4  # Wait for all reviews before fixing
     fi
+    # All reviews in. The fix prompt includes ALL inline comments (Codex + Claude + Gemini).
+    # If Gemini has findings too, mark them addressed since the agent sees them in one pass.
+    if [ "${_PR_GEMINI_FINDINGS:-0}" -gt 0 ]; then
+      echo -e "${YELLOW}CI passed, all reviews in, changes requested + Gemini findings [$_PR_CHECKS_SUMMARY]${NC}"
+      return 7  # Combined: changes requested + Gemini findings (fix all at once)
+    fi
     echo -e "${YELLOW}CI passed, all reviews in, changes requested${NC}"
-    # No notification — review-fix cycles are silent (agent handles automatically)
-    return 3  # Changes requested (all reviews collected)
+    return 3  # Changes requested (Gemini clean or not yet posted)
   elif [ "${_PR_GEMINI_PENDING:-0}" -eq 1 ]; then
     echo -e "${BLUE}Awaiting Gemini review [$_PR_CHECKS_SUMMARY]${NC}"
     return 4  # Awaiting reviews (Gemini pending)
@@ -74,8 +78,7 @@ _check_pr_status() {
         return 4  # Wait for all reviews before fixing
       fi
       echo -e "${YELLOW}Gemini findings need fixing (all reviews in) [$_PR_CHECKS_SUMMARY]${NC}"
-      # No notification — agent auto-fixes, Gemini addressed flag prevents loop
-      return 6  # Gemini findings need fix
+      return 6  # Gemini-only findings
     fi
   fi
   # Ready check (Gemini either approved or findings addressed)
@@ -203,6 +206,12 @@ cmd_check() {
         registry_update_field "$id" "status" "ci-failed"
         _try_review_fix "$id" \
           "CI failed ($_PR_CI_FAIL_NAMES)" "$agent" "$model" "$retries" "$started" "$project" "$_PR_URL"
+      elif [ "$pr_result" -eq 7 ]; then
+        # Combined: Codex/Claude changes requested + Gemini findings. Fix all at once.
+        registry_update_field "$id" "status" "review-failed"
+        registry_update_field "$id" "checks.geminiAddressed" "true"
+        _try_review_fix "$id" \
+          "Review changes requested + Gemini findings (fix all)" "$agent" "$model" "$retries" "$started" "$project" "$_PR_URL"
       elif [ "$pr_result" -eq 3 ]; then
         registry_update_field "$id" "status" "review-failed"
         _try_review_fix "$id" \
@@ -279,6 +288,11 @@ cmd_check() {
           elif [ "$pr_result" -eq 2 ]; then
             # CI pending — just update PR reference
             registry_update_field "$id" "pr" "$pr_url"
+          elif [ "$pr_result" -eq 7 ]; then
+            registry_update_field "$id" "status" "review-failed"
+            registry_update_field "$id" "checks.geminiAddressed" "true"
+            _try_review_fix "$id" \
+              "Review changes requested + Gemini findings (fix all)" "$agent" "$model" "$retries" "$started" "$project" "$_PR_URL"
           elif [ "$pr_result" -eq 3 ]; then
             registry_update_field "$id" "status" "review-failed"
             _try_review_fix "$id" \
