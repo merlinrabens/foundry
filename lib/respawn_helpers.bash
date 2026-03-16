@@ -36,7 +36,7 @@ for p in [
     # URL format: https://vercel.com/team/project/DEPLOY_ID or vercel.com/github
     vercel_deploy_id=$(echo "$link" | grep -oE '/[A-Za-z0-9]{20,}$' | tr -d '/')
     if [ -n "$vercel_token" ] && [ -n "$vercel_deploy_id" ]; then
-      curl -s -H "Authorization: Bearer $vercel_token" \
+      timeout 10 curl -s --max-time 8 -H "Authorization: Bearer $vercel_token" \
         "https://api.vercel.com/v13/deployments/dpl_${vercel_deploy_id}/events?limit=30&direction=backward" 2>/dev/null \
         | python3 -c "
 import sys, json
