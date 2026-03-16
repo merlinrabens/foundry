@@ -69,9 +69,14 @@ cmd_register() {
     }
   fi
 
-  # ── Determine agent + model (same as spawn) ──
-  local agent_backend="${agent_override:-codex}"
+  # ── Determine agent + model (respects DEFAULT_MODEL + ENABLED_BACKENDS) ──
+  local agent_backend="${agent_override:-${DEFAULT_MODEL:-claude}}"
   local model=""
+  # If chosen backend is disabled, fall back to default
+  if type is_backend_enabled &>/dev/null && ! is_backend_enabled "$agent_backend"; then
+    log_warn "Backend '$agent_backend' is disabled, using ${DEFAULT_MODEL:-claude}"
+    agent_backend="${DEFAULT_MODEL:-claude}"
+  fi
   if type detect_model_backend &>/dev/null; then
     detect_model_backend "$agent_backend"
     agent_backend="$AGENT_BACKEND_OUT"
