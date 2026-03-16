@@ -638,10 +638,22 @@ class ACPOrchestrator:
             try:
                 import sqlite3
                 conn = sqlite3.connect(str(db_path), timeout=5)
+
+                # If task has a PR, set pr-open instead of completed.
+                # check.bash will evaluate reviews/CI and transition from there.
+                if final_status == "completed":
+                    row = conn.execute(
+                        "SELECT pr FROM tasks WHERE id = ?", (task_id,)
+                    ).fetchone()
+                    if row and row[0]:
+                        final_status = "pr-open"
+                        self._log(f"Task has PR ({row[0]}), setting pr-open instead of completed")
+
                 now = int(time.time())
+                completed_at = now if final_status not in ("pr-open", "running") else None
                 conn.execute(
                     "UPDATE tasks SET status = ?, completed_at = ? WHERE id = ? AND status = 'running'",
-                    (final_status, now, task_id),
+                    (final_status, completed_at, task_id),
                 )
                 conn.commit()
                 conn.close()
