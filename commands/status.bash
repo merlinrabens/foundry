@@ -22,31 +22,33 @@ cmd_status() {
   fi
 
   # Auto-size columns to fit longest values (with sensible minimums for headers)
-  local task_w=4 repo_w=4 status_w=6 try_w=9
+  local task_w=4 repo_w=4 agent_w=7 status_w=6 try_w=9
   local max_len
   max_len=$(echo "$tasks" | jq -r '.[].id' | awk '{ if (length > m) m = length } END { print m+0 }')
   [ "$max_len" -gt "$task_w" ] && task_w=$max_len
   max_len=$(echo "$tasks" | jq -r '.[].repo' | awk '{ if (length > m) m = length } END { print m+0 }')
   [ "$max_len" -gt "$repo_w" ] && repo_w=$max_len
+  max_len=$(echo "$tasks" | jq -r '.[].agent // "?"' | awk '{ if (length > m) m = length } END { print m+0 }')
+  [ "$max_len" -gt "$agent_w" ] && agent_w=$max_len
   max_len=$(echo "$tasks" | jq -r '.[].status' | awk '{ if (length > m) m = length } END { print m+0 }')
   [ "$max_len" -gt "$status_w" ] && status_w=$max_len
   max_len=$(echo "$tasks" | jq -r '.[] | (("\(.attempts // 1)/\(.maxAttempts // 3)" + "     ")[:5]) + (if (.reviewFixAttempts // 0) > 0 then " | \(.reviewFixAttempts)/\(.maxReviewFixes // 20)" else "" end)' | awk '{ if (length > m) m = length } END { print m+0 }')
   [ "$max_len" -gt "$try_w" ] && try_w=$max_len
   # Add 2-char gutter to each column
-  task_w=$((task_w + 2)); repo_w=$((repo_w + 2)); status_w=$((status_w + 2)); try_w=$((try_w + 2))
+  task_w=$((task_w + 2)); repo_w=$((repo_w + 2)); agent_w=$((agent_w + 2)); status_w=$((status_w + 2)); try_w=$((try_w + 2))
 
   echo ""
-  printf "${BOLD}%-${task_w}s %-${repo_w}s %-${status_w}s %-${try_w}s %-9s %s${NC}\n" "TASK" "REPO" "STATUS" "SPAWN | FIX" "CHECKS" "PR"
-  # Generate dashes matching header text length (not full column width)
-  printf "%-${task_w}s %-${repo_w}s %-${status_w}s %-${try_w}s %-9s %s\n" "----" "----" "------" "-----------" "------" "--"
+  printf "${BOLD}%-${task_w}s %-${repo_w}s %-${agent_w}s %-${status_w}s %-${try_w}s %-9s %s${NC}\n" "TASK" "REPO" "BACKEND" "STATUS" "SPAWN | FIX" "CHECKS" "PR"
+  printf "%-${task_w}s %-${repo_w}s %-${agent_w}s %-${status_w}s %-${try_w}s %-9s %s\n" "----" "----" "-------" "------" "-----------" "------" "--"
 
   local ids
   ids=$(echo "$tasks" | jq -r '.[].id')
   for id in $ids; do
     local task
     task=$(echo "$tasks" | jq --arg id "$id" '.[] | select(.id == $id)')
-    local repo_name status attempts max_attempts pr repo_path checks_summary
+    local repo_name agent status attempts max_attempts pr repo_path checks_summary
     repo_name=$(echo "$task" | jq -r '.repo')
+    agent=$(echo "$task" | jq -r '.agent // "?"')
     status=$(echo "$task" | jq -r '.status')
     attempts=$(echo "$task" | jq -r '.attempts // 1')
     max_attempts=$(echo "$task" | jq -r '.maxAttempts // 3')
@@ -98,7 +100,7 @@ cmd_status() {
     esac
 
     # Print row with ANSI-aware padding for status column
-    printf "%-${task_w}s %-${repo_w}s " "$id" "$repo_name"
+    printf "%-${task_w}s %-${repo_w}s %-${agent_w}s " "$id" "$repo_name" "$agent"
     _pad_color "$status_w" "$status_color" "$status"
     printf " %-${try_w}s %-9s %s\n" "$try_str" "$checks_summary" "$pr"
   done
