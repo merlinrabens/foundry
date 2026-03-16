@@ -32,6 +32,30 @@ determine_next_status() {
       ;;
   esac
 
+  # agent-done: agent exited, exit code in registry, no evaluation yet.
+  # Transition to final state based on exit code and PR discovery.
+  if [ "$current" = "agent-done" ]; then
+    if [ "$exit_code" = "0" ] || [ "$exit_code" = "2" ]; then
+      # exit 0 = success, exit 2 = preflight failure (still has code changes)
+      if [ "$has_pr" = "true" ]; then
+        echo "pr-open"
+      else
+        echo "done-no-pr"
+      fi
+    elif [ "$exit_code" = "99" ]; then
+      # Usage/rate limit — never respawn
+      echo "exhausted"
+    else
+      # Non-zero exit (crash, error, refusal)
+      if [ "$attempts" -lt "$max_attempts" ]; then
+        echo "needs-respawn"
+      else
+        echo "exhausted"
+      fi
+    fi
+    return 0
+  fi
+
   # PR-open path (deploy-failed re-evaluates here too — may self-heal)
   if [ "$current" = "pr-open" ] || [ "$current" = "ready" ] || [ "$current" = "deploy-failed" ]; then
     [ "$pr_state" = "MERGED" ] && { echo "merged"; return 0; }

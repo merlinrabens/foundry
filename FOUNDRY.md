@@ -204,7 +204,7 @@ _jerry_select_agent "/path/to/repo" "anything" "codex"
 
 ### state_machine.bash
 
-13 state transitions, fully deterministic. Takes current state + conditions, returns next state.
+15 state transitions (including `agent-done` and `evaluating`), fully deterministic. Takes current state + conditions, returns next state.
 
 ```bash
 source lib/state_machine.bash
@@ -297,12 +297,14 @@ status=$(get_screenshot_status "src/App.tsx" "$pr_body")
 | State | Meaning |
 |-------|---------|
 | `running` | Agent process is active (PID alive) |
+| `agent-done` | Agent exited, exit code in registry, awaiting evaluation by check |
+| `evaluating` | check.bash acquired CAS lock, evaluating PR/CI/reviews (transient) |
 | `pr-open` | Agent finished, PR created, awaiting reviews |
 | `ready` | All checks passing, awaiting human merge |
 | `merged` | PR merged (terminal) |
 | `closed` | PR closed without merge (terminal) |
 | `done-no-pr` | Agent finished cleanly but didn't create a PR (has commits on branch) |
-| `failed` | Agent exited 0 but produced zero commits — rate limit, auth error, stall. Auto-respawns. |
+| `failed` | Agent exited 0 but produced zero commits. Auto-respawns. (transient) |
 | `needs-respawn` | Failed, eligible for retry |
 | `exhausted` | Failed, no retries left (terminal) |
 | `crashed` | Agent process died unexpectedly |
@@ -319,23 +321,31 @@ status=$(get_screenshot_status "src/App.tsx" "$pr_body")
                     |  running  |
                     +-----+-----+
                           |
+                    agent exits
+                          |
+                  +-------+--------+
+                  |  agent-done    |  (orchestrator writes status + exit_code to DB)
+                  +-------+--------+
+                          |
+                  CAS: agent-done -> evaluating
+                          |
             +-------------+-------------+
             |             |             |
-        exit=0        exit!=0      process died
+        exit=0        exit!=0      exit=99
             |             |             |
-     +------+------+     |        +----+----+
-     | has PR?     |     |        | crashed |---> needs-respawn
-     +--+-------+--+     |        +---------+        |
-        |       |        |                      (if attempts < max)
-     yes|    no |   +----+-----+                     |
-        |       |   | attempts |               +-----------+
-  +-----+--+ +-+---+--+ < max?|               | exhausted |
-  | pr-open | |done-no | +--+--+               +-----------+
-  +----+----+ |   -pr  |    |
-       |      +--------+ yes|       elapsed > timeout?
-       |             +------+------+      |
-       |             |needs-respawn+------+
-       |             +------+------+  (if attempts < max)
+     +------+------+     |        +-----------+
+     | has PR?     |     |        | exhausted |
+     +--+-------+--+     |        +-----------+
+        |       |   +----+-----+
+     yes|    no |   | attempts |
+        |       |   | < max?   |
+  +-----+--+ +-+---+--+ +--+--+
+  | pr-open | |done-no |    |
+  +----+----+ |   -pr  | yes|  no → exhausted
+       |      +--------+   |
+       |             +------+------+
+       |             |needs-respawn|
+       |             +------+------+
        |                    |
        |              (respawn cycle)
        |
@@ -347,19 +357,37 @@ status=$(get_screenshot_status "src/App.tsx" "$pr_body")
   |         +-- Review failed? -> review-failed -> needs-respawn
   |         +-- All pass? ------> ready
   +---------+
+
+Running path (legacy .done fallback for backward compat):
+  running + process died → crashed → needs-respawn
+  running + timeout → timeout → needs-respawn
 ```
+
+### Completion Signaling
+
+The orchestrator writes `status=agent-done` + `agent_exit_code` directly to the SQLite registry,
+then runs `foundry check <task-id>` synchronously. check.bash uses a compare-and-swap (CAS)
+operation to atomically transition `agent-done` to `evaluating`, preventing double-processing
+when multiple checks race. The `.done` file is only written as a fallback if the DB write fails.
+
+**CAS pattern:** `registry_cas_status(id, "agent-done", "evaluating")` returns 0 if the swap
+succeeded (this check won the race) or 1 if another check already claimed it.
 
 ### Self-Healing Flow
 
-1. `check-agents.sh` detects failure (CI, review, crash, timeout)
-2. Sets status to `needs-respawn` with `failureReason`
-3. Foundry check loop cron reads failure context
-4. Fetches: last 100 lines of agent log, CI error details, ALL review feedback (reviews + comments + inline)
-5. Builds `fix.md` prompt with full failure context
-6. Respawns agent in same worktree -- agent reads its own previous code + specific errors
-7. Each retry is smarter: the agent sees what failed and why
-8. If `attempts >= maxAttempts` (default 5) BUT task has a PR + unused review-fix budget: delegates to `_try_review_fix` instead of exhausting
-9. If truly exhausted (no budget left): escalates to Telegram
+1. Agent exits. Orchestrator writes `status=agent-done` + `agent_exit_code` to registry.
+2. Orchestrator runs `foundry check <task-id>` synchronously (targeted, no race window).
+3. check.bash CAS transitions `agent-done` to `evaluating` (prevents double-processing).
+4. check.bash discovers PR via `gh pr list`, evaluates CI/reviews.
+5. Sets final status: `pr-open`, `done-no-pr`, `needs-respawn`, or `exhausted`.
+6. On failure: fetches last 100 lines of agent log, CI error details, ALL review feedback.
+7. Builds `fix.md` prompt with full failure context.
+8. Respawns agent in same worktree. Agent reads its own previous code + specific errors.
+9. Each retry is smarter: the agent sees what failed and why.
+10. If `attempts >= maxAttempts` (default 5) BUT task has a PR + unused review-fix budget: delegates to `_try_review_fix` instead of exhausting.
+11. If truly exhausted (no budget left): escalates to Telegram.
+
+**Stuck evaluating recovery:** Tasks stuck in `evaluating` for >5 min are reset to `agent-done` by the reconciliation pass.
 
 **Worktree self-healing:** If cleanup pruned a worktree (exhausted/completed task), `cmd_respawn` auto-recreates it via `git worktree add` and regenerates `.foundry-run.sh` via the shared `_write_runner_script`. No manual intervention needed.
 
@@ -741,7 +769,7 @@ bats --verbose-run tests/
 | File | Tests | What It Covers |
 |------|-------|---------------|
 | `test_model_routing.bats` | 12 | Backend resolution, variant models, defaults |
-| `test_state_machine.bats` | 23 | All 13 state transitions, stale/idle detection |
+| `test_state_machine.bats` | 34 | All 15 state transitions (incl. agent-done), stale/idle detection |
 | `test_review_pipeline.bats` | 18 | Review dedup, Gemini approval logic, workflow filtering |
 | `test_risk_tier.bats` | 17 | File classification, auto-merge gating |
 | `test_notifications.bats` | 8 | Dedup logic, CRKG string building |
@@ -757,6 +785,7 @@ bats --verbose-run tests/
 | `test_template.bats` | 8 | Prompt template rendering |
 | `test_gh_retry.bats` | 5 | GitHub API retry logic |
 | `test_acp.bats` | 17 | ACP runner scripts, attach, steer, kill |
+| `test_registry_cas.bats` | 7 | Atomic CAS status transitions, agent_exit_code column |
 | `test_diagnose.bats` | 7 | Self-repair diagnostics, stuck detection |
 
 ---
@@ -783,6 +812,7 @@ SQLite database (`foundry.db`) with three tables: `tasks`, `events`, `patterns`.
   "maxAttempts": 5,
   "reviewFixAttempts": 0,
   "maxReviewFixes": 20,
+  "agentExitCode": null,
   "pr": null,
   "checks": {
     "agentAlive": true,

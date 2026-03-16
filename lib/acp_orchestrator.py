@@ -617,47 +617,57 @@ class ACPOrchestrator:
             self._log(f"Preflight error: {e}")
             return 0  # Don't fail on preflight infrastructure errors
 
-    def write_done(self, exit_code: int):
-        """Signal agent completion. Writes exit code to .done file.
+    def write_completion(self, exit_code: int):
+        """Signal agent completion via registry (primary) and .done file (fallback).
 
-        Status transitions are handled entirely by check.bash, which reads
-        the .done file, discovers PRs, evaluates reviews, and sets the
-        correct status. The orchestrator does NOT set final status in the
-        registry (that caused race conditions with check.bash).
+        Writes status=agent-done + agent_exit_code to the SQLite registry.
+        check.bash picks up agent-done tasks, evaluates them via CAS, and
+        transitions to the final state (pr-open, done-no-pr, needs-respawn, exhausted).
 
-        Exception: usage limit (exit 99) is written directly to registry
-        as 'exhausted' because check.bash should never respawn these.
+        Usage limit (exit 99) writes 'exhausted' directly (no evaluation needed).
+        Falls back to .done file if DB write fails.
         """
         task_id = self._derive_task_id()
+        db_path = Path(self.foundry_dir) / "foundry.db"
+        db_written = False
 
-        # Usage limit: write directly to registry (skip respawn)
-        if exit_code == 99:
-            db_path = Path(self.foundry_dir) / "foundry.db"
-            if db_path.exists() and task_id:
-                try:
-                    import sqlite3
-                    conn = sqlite3.connect(str(db_path), timeout=5)
+        if db_path.exists() and task_id:
+            try:
+                import sqlite3
+                conn = sqlite3.connect(str(db_path), timeout=5)
+                if exit_code == 99:
                     conn.execute(
-                        "UPDATE tasks SET status = 'exhausted', completed_at = ? WHERE id = ?",
-                        (int(time.time()), task_id),
+                        "UPDATE tasks SET status = 'exhausted', agent_exit_code = ?, completed_at = ? WHERE id = ?",
+                        (exit_code, int(time.time()), task_id),
                     )
-                    conn.commit()
-                    conn.close()
-                    self._log(f"Registry updated: {task_id} -> exhausted")
-                except Exception as e:
-                    self._log(f"Registry update failed: {e}")
+                    self._log(f"Registry updated: {task_id} -> exhausted (usage limit)")
+                else:
+                    conn.execute(
+                        "UPDATE tasks SET status = 'agent-done', agent_exit_code = ? WHERE id = ?",
+                        (exit_code, task_id),
+                    )
+                    self._log(f"Registry updated: {task_id} -> agent-done (exit {exit_code})")
+                conn.commit()
+                conn.close()
+                db_written = True
+            except Exception as e:
+                self._log(f"Registry update failed: {e}")
 
-        # Write .done file (the primary signal for check.bash)
-        Path(self.done_file).write_text(str(exit_code))
-        self._log(f"Wrote exit code {exit_code} to {self.done_file}")
+        # Fallback: .done file for legacy compat (only if DB write failed or for running tasks)
+        if not db_written:
+            Path(self.done_file).write_text(str(exit_code))
+            self._log(f"Fallback: wrote exit code {exit_code} to {self.done_file}")
+
+    # Backward compat alias
+    def write_done(self, exit_code: int):
+        self.write_completion(exit_code)
 
     def write_status(self):
-        """Write live status to SQLite registry instead of .status.json file."""
+        """Write live status to SQLite registry, falling back to .status.json file."""
         task_id = self._derive_task_id()
         db_path = Path(self.foundry_dir) / "foundry.db"
         if not db_path.exists() or not task_id:
-            # Fallback: write .status.json for legacy compat
-            self.write_status()
+            self._write_status()
             return
 
         try:
@@ -678,8 +688,7 @@ class ACPOrchestrator:
             conn.commit()
             conn.close()
         except Exception:
-            # Fallback to .status.json
-            self.write_status()
+            self._write_status()
 
     def _derive_task_id(self) -> str:
         """Derive task ID from done_file path (e.g., logs/my-task.done -> my-task)."""
@@ -753,23 +762,27 @@ async def main():
         if preflight_result != 0:
             exit_code = preflight_result
 
-    orchestrator.write_done(exit_code)
+    orchestrator.write_completion(exit_code)
 
-    # Safety net: trigger `foundry check` after completion.
-    # If the agent finished without pushing, no CI/gate event fires and the
-    # task status stays stuck on "running". This async check closes the gap.
+    # Run targeted `foundry check <task-id>` synchronously after completion.
+    # This evaluates the task's agent-done state (PR discovery, review eval)
+    # and sets the final status. Sync + targeted = no race window.
+    task_id = orchestrator._derive_task_id()
     foundry_bin = os.path.join(orchestrator.foundry_dir, "foundry")
-    if os.path.isfile(foundry_bin):
+    if os.path.isfile(foundry_bin) and task_id and exit_code != 99:
         try:
-            orchestrator._log("Triggering post-completion foundry check...")
-            subprocess.Popen(
-                ["bash", foundry_bin, "check"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
+            orchestrator._log(f"Running post-completion check for {task_id}...")
+            result = subprocess.run(
+                ["bash", foundry_bin, "check", task_id],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=120,
             )
+            orchestrator._log(f"Post-completion check exited {result.returncode}")
+        except subprocess.TimeoutExpired:
+            orchestrator._log("Post-completion check timed out (120s)")
         except Exception as e:
-            orchestrator._log(f"Post-completion check failed to launch: {e}")
+            orchestrator._log(f"Post-completion check failed: {e}")
 
     orchestrator.close()
 

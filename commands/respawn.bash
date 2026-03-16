@@ -198,6 +198,8 @@ cmd_respawn() {
     kill -0 "$old_pid" 2>/dev/null && kill -KILL "$old_pid" 2>/dev/null || true
   fi
   rm -f "$done_file"
+  # Clear agent_exit_code for fresh evaluation
+  registry_update_field "$task_id" "agentExitCode" "" 2>/dev/null || true
 
   # Increment attempts — but NOT for review-fix respawns (separate budget)
   local rfx

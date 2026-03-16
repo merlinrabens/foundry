@@ -98,6 +98,13 @@ _registry_db_migrate() {
   if [ "${has_session_id_col:-0}" -eq 0 ]; then
     sqlite3 "$REGISTRY_DB" "ALTER TABLE tasks ADD COLUMN session_id TEXT;" 2>/dev/null || true
   fi
+
+  # Add agent_exit_code column for state machine refactoring (agent-done intermediate state)
+  local has_exit_code_col
+  has_exit_code_col=$(sqlite3 "$REGISTRY_DB" "PRAGMA table_info(tasks);" 2>/dev/null | grep -c 'agent_exit_code' || true)
+  if [ "${has_exit_code_col:-0}" -eq 0 ]; then
+    sqlite3 "$REGISTRY_DB" "ALTER TABLE tasks ADD COLUMN agent_exit_code INTEGER;" 2>/dev/null || true
+  fi
 }
 _registry_db_migrate
 
@@ -145,6 +152,7 @@ _rows_to_legacy_json() {
       lastCheckedAt: .last_checked_at,
       openclawSession: .openclaw_session,
       sessionId: .session_id,
+      agentExitCode: .agent_exit_code,
       tgTopicId: .tg_topic_id
     }]'
 }
@@ -294,6 +302,7 @@ _field_to_column() {
     respawnContext)      echo "respawn_context" ;;
     openclawSession)     echo "openclaw_session" ;;
     sessionId)           echo "session_id" ;;
+    agentExitCode)       echo "agent_exit_code" ;;
     tgTopicId)           echo "tg_topic_id" ;;
     startedAt)           echo "started_at" ;;
     completedAt)         echo "completed_at" ;;
@@ -450,4 +459,26 @@ registry_delete_task() {
   escaped_id=$(echo "$task_id" | sed "s/'/''/g")
   _db "DELETE FROM tasks WHERE id = '${escaped_id}';"
   registry_log_event "$task_id" "deleted" "Task removed from registry"
+}
+
+# Alias used by check.bash auto-prune
+registry_remove() {
+  registry_delete_task "$@"
+}
+
+# ─── Compare-and-Swap Status ─────────────────────────────────────────────
+# Atomically transitions status only if current status matches expected.
+# Returns 0 if swap succeeded, 1 if status didn't match (another check won the race).
+registry_cas_status() {
+  local task_id="$1" expected="$2" new_status="$3"
+  local escaped_id
+  escaped_id=$(echo "$task_id" | sed "s/'/''/g")
+  local escaped_expected
+  escaped_expected=$(echo "$expected" | sed "s/'/''/g")
+  local escaped_new
+  escaped_new=$(echo "$new_status" | sed "s/'/''/g")
+
+  local changes
+  changes=$(_db "UPDATE tasks SET status = '${escaped_new}' WHERE id = '${escaped_id}' AND status = '${escaped_expected}'; SELECT changes();")
+  [ "$changes" = "1" ]
 }

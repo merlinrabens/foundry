@@ -49,8 +49,9 @@ Three-backend coding agent system with OpenClaw as orchestrator. Spawns isolated
 │                                                                     │
 │  ┌─── Per Task ───────────────────────────────────────────────────┐ │
 │  │  git worktree (isolated)  →  PR  →  3 reviewers  →  merge     │ │
-│  │  .pid file (liveness)     .done file (completion signal)       │ │
+│  │  .pid file (liveness)     DB agent-done (completion signal)    │ │
 │  │  .log file (streaming)    .steer file (mid-flight redirect)    │ │
+│  │  .done file (fallback only if DB write fails)                  │ │
 │  └────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────┘
 ```

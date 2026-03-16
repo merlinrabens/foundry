@@ -229,6 +229,8 @@ ${pr_body_instructions}"
 
   mkdir -p "$(dirname "$worktree_dir")" "${FOUNDRY_DIR}/logs"
   rm -f "$done_file" "$log_file"
+  # Clear any stale agent_exit_code from previous run
+  registry_update_field "$task_id" "agentExitCode" "" 2>/dev/null || true
 
   # ── Create worktree ──
   log "Creating worktree at ${worktree_dir}..."

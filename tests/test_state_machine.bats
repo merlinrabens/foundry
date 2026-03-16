@@ -191,3 +191,41 @@ setup() {
   [ "$status" -eq 0 ]
   [ "$output" = "deploy-failed" ]
 }
+
+# ── agent-done path ──
+
+@test "agent-done + exit=0 + PR → pr-open" {
+  run determine_next_status "agent-done" "" "0" "true" "1" "3" "" "" ""
+  [ "$status" -eq 0 ]
+  [ "$output" = "pr-open" ]
+}
+
+@test "agent-done + exit=0 + no PR → done-no-pr" {
+  run determine_next_status "agent-done" "" "0" "false" "1" "3" "" "" ""
+  [ "$status" -eq 0 ]
+  [ "$output" = "done-no-pr" ]
+}
+
+@test "agent-done + exit=2 (preflight) + PR → pr-open" {
+  run determine_next_status "agent-done" "" "2" "true" "1" "3" "" "" ""
+  [ "$status" -eq 0 ]
+  [ "$output" = "pr-open" ]
+}
+
+@test "agent-done + exit=1 + attempts<max → needs-respawn" {
+  run determine_next_status "agent-done" "" "1" "false" "1" "3" "" "" ""
+  [ "$status" -eq 0 ]
+  [ "$output" = "needs-respawn" ]
+}
+
+@test "agent-done + exit=1 + attempts>=max → exhausted" {
+  run determine_next_status "agent-done" "" "1" "false" "3" "3" "" "" ""
+  [ "$status" -eq 0 ]
+  [ "$output" = "exhausted" ]
+}
+
+@test "agent-done + exit=99 (usage limit) → exhausted regardless of attempts" {
+  run determine_next_status "agent-done" "" "99" "false" "1" "3" "" "" ""
+  [ "$status" -eq 0 ]
+  [ "$output" = "exhausted" ]
+}

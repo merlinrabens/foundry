@@ -3,6 +3,9 @@
 # check calls cmd_respawn for auto-respawn on failure
 type cmd_respawn &>/dev/null || source "$(dirname "${BASH_SOURCE[0]}")/respawn.bash"
 
+# Source state machine for agent-done evaluation
+type determine_next_status &>/dev/null || source "$(dirname "${BASH_SOURCE[0]}")/../lib/state_machine.bash"
+
 # Kill a task's PID if still alive (prevents zombie processes on terminal transitions)
 _kill_task_pid() {
   local task_pid="$1"
@@ -104,6 +107,53 @@ _check_pr_status() {
   fi
 }
 
+# _handle_pr_result <task_id> <pr_result> <agent> <model> <retries> <started> <project> <worktree>
+# Shared handler for PR evaluation results. Eliminates duplication between
+# pr-open monitoring and agent-done→PR evaluation paths.
+_handle_pr_result() {
+  local id="$1" pr_result="$2" agent="$3" model="$4"
+  local retries="$5" started="$6" project="$7" worktree="$8"
+  local attempts="${9:-1}" max_attempts="${10:-3}"
+
+  if [ "$pr_result" -eq 5 ]; then
+    registry_update_field "$id" "status" "deploy-failed"
+  elif [ "$pr_result" -eq 1 ]; then
+    registry_update_field "$id" "status" "ci-failed"
+    _try_review_fix "$id" \
+      "CI failed ($_PR_CI_FAIL_NAMES)" "$agent" "$model" "$retries" "$started" "$project" "$_PR_URL"
+  elif [ "$pr_result" -eq 7 ]; then
+    registry_update_field "$id" "status" "review-failed"
+    registry_update_field "$id" "checks.geminiAddressed" "true"
+    _try_review_fix "$id" \
+      "Review changes requested + Gemini findings (fix all)" "$agent" "$model" "$retries" "$started" "$project" "$_PR_URL"
+  elif [ "$pr_result" -eq 3 ]; then
+    registry_update_field "$id" "status" "review-failed"
+    _try_review_fix "$id" \
+      "Review changes requested" "$agent" "$model" "$retries" "$started" "$project" "$_PR_URL"
+  elif [ "$pr_result" -eq 6 ]; then
+    registry_update_field "$id" "status" "review-failed"
+    registry_update_field "$id" "checks.geminiAddressed" "true"
+    _try_review_fix "$id" \
+      "Gemini review findings need fixing" "$agent" "$model" "$retries" "$started" "$project" "$_PR_URL"
+  elif [ "$pr_result" -eq 0 ]; then
+    if _all_checks_pass "$id"; then
+      local current_status
+      current_status=$(registry_get_task "$id" | jq -r '.status // "running"')
+      if [ "$current_status" != "ready" ]; then
+        local is_draft
+        is_draft=$(cd "$worktree" 2>/dev/null && gh_retry gh pr view --json isDraft --jq '.isDraft' || echo "false")
+        [ "$is_draft" = "true" ] && { cd "$worktree" 2>/dev/null && gh pr ready 2>/dev/null || true; }
+        local now_ts; now_ts=$(date +%s)
+        registry_update_field "$id" "completedAt" "$now_ts"
+        local duration=$(( now_ts - started ))
+        pattern_log "$id" "$agent" "$model" "$retries" "true" "$duration" "$project" "feature"
+      fi
+      _try_auto_merge "$id" "$worktree"
+    fi
+  fi
+  # pr_result == 2 (CI pending) or 4 (awaiting reviews) — nothing extra to do
+}
+
 cmd_check() {
   local target_task_id="${1:-}"
 
@@ -123,23 +173,25 @@ cmd_check() {
     tasks=$(echo "$tasks" | jq --arg id "$target_task_id" '[.[] | select(.id == $id)]')
   fi
 
-  local running_count monitoring_count respawn_count
+  local running_count monitoring_count respawn_count agent_done_count
   running_count=$(echo "$tasks" | jq '[.[] | select(.status == "running")] | length')
+  agent_done_count=$(echo "$tasks" | jq '[.[] | select(.status == "agent-done")] | length')
   monitoring_count=$(echo "$tasks" | jq '[.[] | select(.status == "pr-open" or .status == "ready" or .status == "deploy-failed")] | length')
   respawn_count=$(echo "$tasks" | jq '[.[] | select(.status == "needs-respawn" or .status == "ci-failed" or .status == "review-failed" or .status == "failed" or .status == "crashed")] | length')
 
-  if [ "$running_count" -eq 0 ] && [ "$monitoring_count" -eq 0 ] && [ "$respawn_count" -eq 0 ]; then
+  if [ "$running_count" -eq 0 ] && [ "$agent_done_count" -eq 0 ] && [ "$monitoring_count" -eq 0 ] && [ "$respawn_count" -eq 0 ]; then
     log "No running or monitored agents."
     return 0
   fi
 
   [ "$running_count" -gt 0 ] && log "Checking $running_count running agent(s)..."
+  [ "$agent_done_count" -gt 0 ] && log "Evaluating $agent_done_count completed agent(s)..."
   [ "$monitoring_count" -gt 0 ] && log "Monitoring $monitoring_count PR(s)..."
   [ "$respawn_count" -gt 0 ] && log "Respawning $respawn_count task(s)..."
   echo ""
 
   local ids
-  ids=$(echo "$tasks" | jq -r '.[] | select(.status == "running" or .status == "pr-open" or .status == "ready" or .status == "deploy-failed") | .id')
+  ids=$(echo "$tasks" | jq -r '.[] | select(.status == "running" or .status == "agent-done" or .status == "pr-open" or .status == "ready" or .status == "deploy-failed") | .id')
 
   for id in $ids; do
     local task
@@ -198,32 +250,82 @@ cmd_check() {
         || pr_result=$?
 
       # Handle CI failure, deploy failure, review issues for monitored PRs
-      if [ "$pr_result" -eq 5 ]; then
-        # Deploy-only failure (Railway/Vercel/Supabase): keep monitoring, don't respawn
-        registry_update_field "$id" "status" "deploy-failed"
-      elif [ "$pr_result" -eq 1 ]; then
-        # CI failing — use review-fix budget (agent has a PR, just needs to fix CI)
-        registry_update_field "$id" "status" "ci-failed"
-        _try_review_fix "$id" \
-          "CI failed ($_PR_CI_FAIL_NAMES)" "$agent" "$model" "$retries" "$started" "$project" "$_PR_URL"
-      elif [ "$pr_result" -eq 7 ]; then
-        # Combined: Codex/Claude changes requested + Gemini findings. Fix all at once.
-        registry_update_field "$id" "status" "review-failed"
-        registry_update_field "$id" "checks.geminiAddressed" "true"
-        _try_review_fix "$id" \
-          "Review changes requested + Gemini findings (fix all)" "$agent" "$model" "$retries" "$started" "$project" "$_PR_URL"
-      elif [ "$pr_result" -eq 3 ]; then
-        registry_update_field "$id" "status" "review-failed"
-        _try_review_fix "$id" \
-          "Review changes requested" "$agent" "$model" "$retries" "$started" "$project" "$_PR_URL"
-      elif [ "$pr_result" -eq 6 ]; then
-        registry_update_field "$id" "status" "review-failed"
-        registry_update_field "$id" "checks.geminiAddressed" "true"
-        _try_review_fix "$id" \
-          "Gemini review findings need fixing" "$agent" "$model" "$retries" "$started" "$project" "$_PR_URL"
-      elif [ "$pr_result" -eq 0 ]; then
-        # Ready — try auto-merge if enabled
-        _try_auto_merge "$id" "$check_dir"
+      _handle_pr_result "$id" "$pr_result" "$agent" "$model" "$retries" "$started" "$project" "$check_dir" "$attempts" "$max_attempts"
+      continue
+    fi
+
+    # 0.5. agent-done: orchestrator wrote completion to registry. Evaluate via CAS.
+    if [ "$task_status" = "agent-done" ]; then
+      local exit_code_db
+      exit_code_db=$(echo "$task" | jq -r '.agentExitCode // ""')
+      if [ -z "$exit_code_db" ] || [ "$exit_code_db" = "null" ]; then
+        echo -e "${YELLOW}agent-done but no exit code — resetting to running${NC}"
+        registry_update_field "$id" "status" "running"
+        continue
+      fi
+
+      # CAS: agent-done → evaluating (prevents double-processing)
+      if ! registry_cas_status "$id" "agent-done" "evaluating"; then
+        echo -e "${BLUE}agent-done (another check is evaluating)${NC}"
+        continue
+      fi
+
+      registry_log_event "$id" "evaluating" "CAS acquired, exit_code=$exit_code_db"
+      _kill_task_pid "$(echo "$task" | jq -r '.pid // empty')"
+
+      if [ "$exit_code_db" = "0" ] || [ "$exit_code_db" = "2" ]; then
+        # Success (or preflight failure with code changes). Discover PR.
+        local pr_url=""
+        pr_url=$(echo "$task" | jq -r '.pr // empty')
+        if [ -z "$pr_url" ] || [ "$pr_url" = "null" ]; then
+          local check_dir="$worktree"
+          [ ! -d "$worktree" ] && check_dir="$repo"
+          pr_url=$(cd "$check_dir" 2>/dev/null && gh_retry gh pr list --head "$branch" --json url --jq '.[0].url' || echo "")
+        fi
+
+        if [ -n "$pr_url" ] && [ "$pr_url" != "null" ]; then
+          echo -e "${GREEN}PR found: ${pr_url}${NC}"
+          registry_batch_update "$id" "status=pr-open" "pr=$pr_url" "checks.prCreated=true"
+
+          # Evaluate PR
+          local pr_result=0
+          _check_pr_status "$id" "$worktree" "" "$task" \
+            "$attempts" "$max_attempts" "$agent" "$model" "$retries" "$started" "$project" \
+            || pr_result=$?
+          _handle_pr_result "$id" "$pr_result" "$agent" "$model" "$retries" "$started" "$project" "$worktree" "$attempts" "$max_attempts"
+        else
+          # No PR. Check if agent produced any commits.
+          local commit_count
+          commit_count=$(cd "$worktree" 2>/dev/null && git rev-list --count "$(git merge-base HEAD main 2>/dev/null || echo main)..HEAD" 2>/dev/null || echo "0")
+          if [ "$commit_count" = "0" ]; then
+            echo -e "${RED}Failed (exit 0 but no commits, no PR)${NC}"
+            registry_update_field "$id" "status" "failed"
+            _try_respawn_or_exhaust "$id" "$attempts" "$max_attempts" \
+              "Agent produced no changes (exit 0)" "$agent" "$model" "$retries" "$started" "$project"
+          else
+            # Check for late PR
+            local late_pr
+            late_pr=$(cd "$worktree" 2>/dev/null && gh_retry gh pr list --head "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" --json number,url --jq '.[0]' 2>/dev/null || echo "")
+            if [ -n "$late_pr" ] && [ "$late_pr" != "null" ]; then
+              local late_pr_num late_pr_url
+              late_pr_num=$(echo "$late_pr" | jq -r '.number')
+              late_pr_url=$(echo "$late_pr" | jq -r '.url')
+              echo -e "${GREEN}Late PR discovery: #${late_pr_num}${NC}"
+              registry_batch_update "$id" "status=pr-open" "pr=$late_pr_num" "completedAt=$(date +%s)"
+            else
+              echo -e "${YELLOW}Done but no PR ($commit_count commit(s) on branch)${NC}"
+              registry_batch_update "$id" "status=done-no-pr" "completedAt=$(date +%s)"
+            fi
+          fi
+        fi
+      else
+        # Non-zero exit
+        echo -e "${RED}Failed (exit $exit_code_db)${NC}"
+        registry_update_field "$id" "status" "failed"
+        local task_pr_url
+        task_pr_url=$(echo "$task" | jq -r '.pr // empty')
+        _try_respawn_or_exhaust "$id" "$attempts" "$max_attempts" \
+          "Agent failed (exit $exit_code_db)" "$agent" "$model" "$retries" "$started" "$project" "$task_pr_url"
       fi
       continue
     fi
@@ -276,51 +378,12 @@ cmd_check() {
             "$attempts" "$max_attempts" "$agent" "$model" "$retries" "$started" "$project" \
             || pr_result=$?
 
-          if [ "$pr_result" -eq 5 ]; then
-            # Deploy-only failure — keep monitoring, don't respawn
-            registry_update_field "$id" "status" "deploy-failed"
-            registry_update_field "$id" "pr" "$pr_url"
-          elif [ "$pr_result" -eq 1 ]; then
-            # CI failing — use review-fix budget (agent has a PR, just needs to fix CI)
-            registry_update_field "$id" "status" "ci-failed"
-            _try_review_fix "$id" \
-              "CI failed ($_PR_CI_FAIL_NAMES)" "$agent" "$model" "$retries" "$started" "$project" "$_PR_URL"
-          elif [ "$pr_result" -eq 2 ]; then
+          if [ "$pr_result" -eq 2 ]; then
             # CI pending — just update PR reference
             registry_update_field "$id" "pr" "$pr_url"
-          elif [ "$pr_result" -eq 7 ]; then
-            registry_update_field "$id" "status" "review-failed"
-            registry_update_field "$id" "checks.geminiAddressed" "true"
-            _try_review_fix "$id" \
-              "Review changes requested + Gemini findings (fix all)" "$agent" "$model" "$retries" "$started" "$project" "$_PR_URL"
-          elif [ "$pr_result" -eq 3 ]; then
-            registry_update_field "$id" "status" "review-failed"
-            _try_review_fix "$id" \
-              "Review changes requested" "$agent" "$model" "$retries" "$started" "$project" "$_PR_URL"
-          elif [ "$pr_result" -eq 6 ]; then
-            registry_update_field "$id" "status" "review-failed"
-            registry_update_field "$id" "checks.geminiAddressed" "true"
-            _try_review_fix "$id" \
-              "Gemini review findings need fixing" "$agent" "$model" "$retries" "$started" "$project" "$_PR_URL"
-          elif [ "$pr_result" -eq 0 ]; then
-            # Ready to merge — check if truly all checks pass
-            if _all_checks_pass "$id"; then
-              local current_status
-              current_status=$(registry_get_task "$id" | jq -r '.status // "running"')
-              if [ "$current_status" != "ready" ]; then
-                local is_draft
-                is_draft=$(cd "$worktree" 2>/dev/null && gh_retry gh pr view --json isDraft --jq '.isDraft' || echo "false")
-                [ "$is_draft" = "true" ] && { cd "$worktree" 2>/dev/null && gh pr ready 2>/dev/null || true; }
-                local now_ts; now_ts=$(date +%s)
-                registry_update_field "$id" "completedAt" "$now_ts"
-                local duration=$(( now_ts - started ))
-                pattern_log "$id" "$agent" "$model" "$retries" "true" "$duration" "$project" "feature"
-              fi
-              # Try auto-merge if enabled
-              _try_auto_merge "$id" "$worktree"
-            fi
+          else
+            _handle_pr_result "$id" "$pr_result" "$agent" "$model" "$retries" "$started" "$project" "$worktree" "$attempts" "$max_attempts"
           fi
-          # pr_result == 4 (awaiting reviews) — nothing extra to do
         else
           # Check if agent actually produced any work (exit 0 but zero commits = failed)
           local commit_count
@@ -419,6 +482,18 @@ cmd_check() {
     # 4. Still running
     local mins=$((elapsed / 60))
     echo -e "${BLUE}Running (${mins}m)${NC}"
+  done
+
+  # Reconciliation: reset tasks stuck in 'evaluating' >5 min back to agent-done
+  local eval_stuck_ids
+  eval_stuck_ids=$(registry_read | jq -r --argjson now "$(date +%s)" '
+    .[] | select(
+      .status == "evaluating" and
+      (($now - (.lastCheckedAt // .startedAt // 0)) > 300)
+    ) | .id')
+  for eid in $eval_stuck_ids; do
+    log "Reconciling stuck evaluating task: $eid -> agent-done"
+    registry_cas_status "$eid" "evaluating" "agent-done" || true
   done
 
   # Reconciliation pass: catch tasks stuck in limbo states
