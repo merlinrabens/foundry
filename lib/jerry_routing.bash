@@ -14,29 +14,32 @@ _LIB_JERRY_ROUTING_LOADED=1
 #   1. If model_hint is a known backend name (codex/claude/gemini), use it directly
 #   2. Check patterns DB for repo's best-performing agent (if enough data)
 #   3. Heuristic: classify task content by file patterns / keywords
-#   4. Default: codex (the workhorse)
+#   4. Default: DEFAULT_MODEL from config
+#
+# All selections are gated by is_backend_enabled() from model_routing.bash.
+# Set ENABLED_BACKENDS in config to control which backends are available.
 _jerry_select_agent() {
   local repo_dir="$1" task_content="$2" model_hint="${3:-auto}"
 
   JERRY_BACKEND=""
   JERRY_MODEL=""
 
-  # ── 1. Respect explicit hints ──
+  # ── 1. Respect explicit hints (if backend is enabled) ──
   case "$model_hint" in
     codex|codex:*)
-      JERRY_BACKEND="codex"
-      JERRY_MODEL="codex"
-      return 0
+      if is_backend_enabled "codex"; then
+        JERRY_BACKEND="codex"; JERRY_MODEL="codex"; return 0
+      fi
       ;;
     claude|claude:*|claude-complex)
-      JERRY_BACKEND="claude"
-      JERRY_MODEL="$model_hint"
-      return 0
+      if is_backend_enabled "claude"; then
+        JERRY_BACKEND="claude"; JERRY_MODEL="$model_hint"; return 0
+      fi
       ;;
     gemini|gemini:*)
-      JERRY_BACKEND="gemini"
-      JERRY_MODEL="$model_hint"
-      return 0
+      if is_backend_enabled "gemini"; then
+        JERRY_BACKEND="gemini"; JERRY_MODEL="$model_hint"; return 0
+      fi
       ;;
   esac
 
@@ -48,7 +51,7 @@ _jerry_select_agent() {
   if [ -f "$patterns_file" ] && command -v jq >/dev/null 2>&1; then
     local best_agent
     best_agent=$(_jerry_patterns_best "$patterns_file" "$project_name")
-    if [ -n "$best_agent" ]; then
+    if [ -n "$best_agent" ] && is_backend_enabled "$best_agent"; then
       JERRY_BACKEND="$best_agent"
       JERRY_MODEL="$best_agent"
       return 0
@@ -60,22 +63,34 @@ _jerry_select_agent() {
   content_lower=$(echo "$task_content" | tr '[:upper:]' '[:lower:]')
 
   # Design / UI polish → gemini
-  if echo "$content_lower" | grep -qE '(beautiful|redesign|landing page|visual|design system|look.and.feel|polish|aesthetic)'; then
+  if is_backend_enabled "gemini" && echo "$content_lower" | grep -qE '(beautiful|redesign|landing page|visual|design system|look.and.feel|polish|aesthetic)'; then
     JERRY_BACKEND="gemini"
     JERRY_MODEL="gemini"
     return 0
   fi
 
   # Frontend-heavy → claude
-  if echo "$content_lower" | grep -qE '\.(tsx|jsx|vue|svelte|css|scss)\b|react component|frontend|styling|tailwind|ui component'; then
+  if is_backend_enabled "claude" && echo "$content_lower" | grep -qE '\.(tsx|jsx|vue|svelte|css|scss)\b|react component|frontend|styling|tailwind|ui component'; then
     JERRY_BACKEND="claude"
     JERRY_MODEL="claude"
     return 0
   fi
 
-  # ── 4. Default: codex ──
-  JERRY_BACKEND="codex"
-  JERRY_MODEL="codex"
+  # ── 4. Default: DEFAULT_MODEL from config (if enabled) ──
+  local default="${DEFAULT_MODEL:-claude}"
+  if is_backend_enabled "$default"; then
+    JERRY_BACKEND="$default"
+    JERRY_MODEL="$default"
+  elif is_backend_enabled "claude"; then
+    JERRY_BACKEND="claude"
+    JERRY_MODEL="claude"
+  elif is_backend_enabled "gemini"; then
+    JERRY_BACKEND="gemini"
+    JERRY_MODEL="gemini"
+  elif is_backend_enabled "codex"; then
+    JERRY_BACKEND="codex"
+    JERRY_MODEL="codex"
+  fi
 }
 
 # _jerry_patterns_best <patterns_file> <project_name>
