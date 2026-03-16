@@ -462,9 +462,19 @@ class ACPOrchestrator:
 
             exit_code = 0
             if "error" in prompt_resp:
-                self._log(f"Prompt failed: {prompt_resp['error']}")
-                self._error = str(prompt_resp["error"])
-                exit_code = 1
+                error_data = prompt_resp["error"]
+                error_msg = error_data.get("message", str(error_data)) if isinstance(error_data, dict) else str(error_data)
+                error_info = error_data.get("data", {}).get("codex_error_info", "") if isinstance(error_data, dict) else ""
+                self._log(f"Prompt failed: {error_msg}")
+                self._error = error_msg
+
+                # Usage limit: don't respawn (pointless), alert immediately
+                if "usage_limit" in error_info or "usage limit" in error_msg.lower():
+                    self._log("USAGE LIMIT HIT — marking as exhausted to prevent respawn")
+                    exit_code = 99  # Special code: check.bash treats as exhausted
+                    self._send_usage_limit_alert(error_msg)
+                else:
+                    exit_code = 1
             else:
                 stop_reason = prompt_resp.get("result", {}).get("stopReason", "end_turn")
                 self._log(f"\nAgent finished (stopReason: {stop_reason})")
@@ -606,7 +616,12 @@ class ACPOrchestrator:
         fallback for edge cases where the DB write fails.
         """
         task_id = self._derive_task_id()
-        final_status = "completed" if exit_code == 0 else "failed"
+        if exit_code == 99:
+            final_status = "exhausted"  # Usage limit, no respawn
+        elif exit_code == 0:
+            final_status = "completed"
+        else:
+            final_status = "failed"
 
         # Primary: update SQLite registry
         db_path = Path(self.foundry_dir) / "foundry.db"
@@ -662,6 +677,36 @@ class ACPOrchestrator:
     def _derive_task_id(self) -> str:
         """Derive task ID from done_file path (e.g., logs/my-task.done -> my-task)."""
         return Path(self.done_file).stem if self.done_file else ""
+
+    def _send_usage_limit_alert(self, error_msg: str):
+        """Send Telegram alert when a backend hits its usage limit."""
+        task_id = self._derive_task_id()
+        try:
+            config_path = Path.home() / ".openclaw" / "openclaw.json"
+            if config_path.exists():
+                import json as _json
+                config = _json.loads(config_path.read_text())
+                bot_token = config.get("channels", {}).get("telegram", {}).get("botToken", "")
+                chat_id = "8193483231"
+                if bot_token and isinstance(bot_token, str):
+                    import urllib.request
+                    msg = (
+                        f"⚠️ <b>Foundry: Usage Limit Hit</b>\n\n"
+                        f"Task: <code>{task_id}</code>\n"
+                        f"Backend: {self.backend}\n"
+                        f"Error: {error_msg[:200]}\n\n"
+                        f"Task marked as exhausted (no respawn)."
+                    )
+                    data = urllib.parse.urlencode({
+                        "chat_id": chat_id, "text": msg, "parse_mode": "HTML"
+                    }).encode()
+                    urllib.request.urlopen(
+                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                        data, timeout=10
+                    )
+                    self._log("Usage limit alert sent to Telegram")
+        except Exception as e:
+            self._log(f"Failed to send usage limit alert: {e}")
 
     def close(self):
         """Clean up resources."""
