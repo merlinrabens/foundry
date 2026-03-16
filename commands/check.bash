@@ -205,10 +205,12 @@ cmd_check() {
           "CI failed ($_PR_CI_FAIL_NAMES)" "$agent" "$model" "$retries" "$started" "$project" "$_PR_URL"
       elif [ "$pr_result" -eq 3 ]; then
         registry_update_field "$id" "status" "review-failed"
+        # Mark Gemini as addressed: the agent gets ALL inline comments (incl Gemini)
+        # in the review-fix prompt, so it fixes everything in one cycle.
+        registry_update_field "$id" "checks.geminiAddressed" "true"
         _try_review_fix "$id" \
           "Review changes requested" "$agent" "$model" "$retries" "$started" "$project" "$_PR_URL"
       elif [ "$pr_result" -eq 6 ]; then
-        # Gemini findings — one fix attempt, then mark addressed
         registry_update_field "$id" "status" "review-failed"
         registry_update_field "$id" "checks.geminiAddressed" "true"
         _try_review_fix "$id" \
@@ -281,12 +283,11 @@ cmd_check() {
             # CI pending — just update PR reference
             registry_update_field "$id" "pr" "$pr_url"
           elif [ "$pr_result" -eq 3 ]; then
-            # Changes requested — use review-fix budget (separate from crash retries)
             registry_update_field "$id" "status" "review-failed"
+            registry_update_field "$id" "checks.geminiAddressed" "true"
             _try_review_fix "$id" \
               "Review changes requested" "$agent" "$model" "$retries" "$started" "$project" "$_PR_URL"
           elif [ "$pr_result" -eq 6 ]; then
-            # Gemini findings — one fix attempt, then mark addressed
             registry_update_field "$id" "status" "review-failed"
             registry_update_field "$id" "checks.geminiAddressed" "true"
             _try_review_fix "$id" \
