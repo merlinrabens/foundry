@@ -618,73 +618,36 @@ class ACPOrchestrator:
             return 0  # Don't fail on preflight infrastructure errors
 
     def write_done(self, exit_code: int):
-        """Signal completion via SQLite registry (primary) and .done file (compat).
+        """Signal agent completion. Writes exit code to .done file.
 
-        The registry update is the authoritative signal. check.bash reads
-        the registry first. The .done file is kept as a belt-and-suspenders
-        fallback for edge cases where the DB write fails.
+        Status transitions are handled entirely by check.bash, which reads
+        the .done file, discovers PRs, evaluates reviews, and sets the
+        correct status. The orchestrator does NOT set final status in the
+        registry (that caused race conditions with check.bash).
+
+        Exception: usage limit (exit 99) is written directly to registry
+        as 'exhausted' because check.bash should never respawn these.
         """
         task_id = self._derive_task_id()
+
+        # Usage limit: write directly to registry (skip respawn)
         if exit_code == 99:
-            final_status = "exhausted"  # Usage limit, no respawn
-        elif exit_code == 0:
-            final_status = "completed"
-        else:
-            final_status = "failed"
+            db_path = Path(self.foundry_dir) / "foundry.db"
+            if db_path.exists() and task_id:
+                try:
+                    import sqlite3
+                    conn = sqlite3.connect(str(db_path), timeout=5)
+                    conn.execute(
+                        "UPDATE tasks SET status = 'exhausted', completed_at = ? WHERE id = ?",
+                        (int(time.time()), task_id),
+                    )
+                    conn.commit()
+                    conn.close()
+                    self._log(f"Registry updated: {task_id} -> exhausted")
+                except Exception as e:
+                    self._log(f"Registry update failed: {e}")
 
-        # Primary: update SQLite registry
-        db_path = Path(self.foundry_dir) / "foundry.db"
-        if db_path.exists() and task_id:
-            try:
-                import sqlite3
-                conn = sqlite3.connect(str(db_path), timeout=5)
-
-                # If task has a PR, set pr-open instead of completed.
-                # check.bash will evaluate reviews/CI and transition from there.
-                if final_status == "completed":
-                    row = conn.execute(
-                        "SELECT pr, branch FROM tasks WHERE id = ?", (task_id,)
-                    ).fetchone()
-                    pr_val = row[0] if row else None
-
-                    # PR might not be in registry yet (agent just created it).
-                    # Check GitHub directly if branch exists.
-                    if not pr_val and row and row[1]:
-                        try:
-                            import subprocess as _sp
-                            pr_num = _sp.run(
-                                ["gh", "pr", "list", "--head", row[1],
-                                 "--json", "number", "--jq", ".[0].number"],
-                                capture_output=True, text=True, timeout=15,
-                                cwd=self.worktree,
-                            ).stdout.strip()
-                            if pr_num:
-                                pr_val = pr_num
-                                conn.execute(
-                                    "UPDATE tasks SET pr = ? WHERE id = ?",
-                                    (pr_num, task_id),
-                                )
-                                self._log(f"Discovered PR #{pr_num} on branch {row[1]}")
-                        except Exception as e:
-                            self._log(f"PR discovery failed: {e}")
-
-                    if pr_val:
-                        final_status = "pr-open"
-                        self._log(f"Task has PR ({pr_val}), setting pr-open instead of completed")
-
-                now = int(time.time())
-                completed_at = now if final_status not in ("pr-open", "running") else None
-                conn.execute(
-                    "UPDATE tasks SET status = ?, completed_at = ? WHERE id = ? AND status = 'running'",
-                    (final_status, completed_at, task_id),
-                )
-                conn.commit()
-                conn.close()
-                self._log(f"Registry updated: {task_id} -> {final_status}")
-            except Exception as e:
-                self._log(f"Registry update failed: {e}, falling back to .done file")
-
-        # Fallback: .done file (kept for backward compat)
+        # Write .done file (the primary signal for check.bash)
         Path(self.done_file).write_text(str(exit_code))
         self._log(f"Wrote exit code {exit_code} to {self.done_file}")
 
