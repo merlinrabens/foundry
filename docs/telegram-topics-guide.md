@@ -306,7 +306,7 @@ sqlite3 ~/.openclaw/workspace/scripts/foundry/foundry.db \
 
 | Variable                | Description                                     | Where to set              |
 | ----------------------- | ----------------------------------------------- | ------------------------- |
-| `TG_CHAT_ID`           | Telegram Supergroup ID (e.g. `-1001234567890`)  | `config.env`              |
+| `TG_CHAT_ID`           | Telegram Supergroup ID (e.g. `-1001234567890`)  | `config.local.env`        |
 | `OPENCLAW_TG_BOT_TOKEN`| Bot token for the Telegram API                  | Environment variable      |
 
 ### Telegram Supergroup Setup

@@ -57,13 +57,34 @@ _build_pr_status_html() {
   pr_title=$(echo "$pr_info" | jq -r '.title // "PR"')
   pr_number=$(echo "$pr_info" | jq -r '.number // ""')
 
-  # Fallback: extract PR number from _PR_URL if gh pr view didn't resolve it
+  # Fallback chain for PR number when gh pr view fails (e.g., pruned worktree)
   if [ -z "$pr_number" ] && [ -n "$_PR_URL" ]; then
     pr_number=$(echo "$_PR_URL" | grep -oE '[0-9]+$' || echo "")
   fi
-  # Fallback: extract from pr_ref if it's a number
   if [ -z "$pr_number" ] && echo "$pr_ref" | grep -qE '^[0-9]+$' 2>/dev/null; then
     pr_number="$pr_ref"
+  fi
+  # Fallback: extract number from pr_ref if it's a URL (e.g., https://github.com/.../pull/123)
+  if [ -z "$pr_number" ] && echo "$pr_ref" | grep -qE 'pull/[0-9]+' 2>/dev/null; then
+    pr_number=$(echo "$pr_ref" | grep -oE '[0-9]+$' || echo "")
+  fi
+
+  # Fallback: if _PR_URL is empty but pr_ref is a URL, use it
+  if [ -z "$_PR_URL" ] && echo "$pr_ref" | grep -qE '^https://' 2>/dev/null; then
+    _PR_URL="$pr_ref"
+  fi
+
+  # Last resort: try gh pr view with the URL directly (works without check_dir context)
+  if [ -z "$pr_number" ] || [ "$pr_title" = "PR" ]; then
+    if [ -n "$_PR_URL" ]; then
+      local url_info
+      url_info=$(gh_retry gh pr view "$_PR_URL" --json title,number 2>/dev/null || echo '{}')
+      local url_title url_number
+      url_title=$(echo "$url_info" | jq -r '.title // ""')
+      url_number=$(echo "$url_info" | jq -r '.number // ""')
+      [ -n "$url_number" ] && [ -z "$pr_number" ] && pr_number="$url_number"
+      [ -n "$url_title" ] && [ "$pr_title" = "PR" ] && pr_title="$url_title"
+    fi
   fi
 
   # Determine overall status

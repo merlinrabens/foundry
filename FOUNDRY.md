@@ -59,7 +59,8 @@ Git-style subcommand architecture. The dispatcher is ~50 lines. Each command liv
 ```
 foundry                    Thin dispatcher (~53 lines, bash)
 swarm -> foundry           Backward compat symlink
-config.env                All tunables (models, limits, thresholds)
+config.env                Tracked defaults (models, limits, thresholds)
+config.local.env          Gitignored overrides (repos, TG_CHAT_ID, paths)
 core/                     Shared infrastructure (6 files, ~400 lines)
   logging.bash              Colors, log functions, tg_notify
   registry.bash             Lock-protected JSON registry ops (legacy)
@@ -669,7 +670,22 @@ The Gate handles real-time reactions (review → respawn in seconds). The orches
 
 ## Configuration
 
-All tunables in `config.env`:
+Foundry uses a **two-file config system**:
+
+| File | Tracked? | Purpose |
+|------|----------|---------|
+| `config.env` | Yes (in git) | Safe defaults, model names, limits, thresholds |
+| `config.local.env` | No (gitignored) | Personal overrides: `KNOWN_PROJECTS`, `TG_CHAT_ID`, paths |
+
+The dispatcher sources `config.env` first, then `config.local.env` on top (`[ -f config.local.env ] && source config.local.env`). Any variable in `config.local.env` wins.
+
+**Important:** Bash arrays like `KNOWN_PROJECTS=()` are **replaced**, not merged. Your `config.local.env` must contain the FULL array, not just additions.
+
+**What goes where:**
+- `config.env`: Model defaults, limits, timeouts, feature flags (safe for public repo)
+- `config.local.env`: `KNOWN_PROJECTS`, `TG_CHAT_ID`, any personal paths or tokens
+
+All tunables in `config.env` (defaults):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -687,6 +703,16 @@ All tunables in `config.env`:
 | `AUTO_MERGE_LOW_RISK` | `false` | Auto-merge LOW risk PRs |
 | `STALE_THRESHOLD_SECS` | `7200` | Flag agents running >2h without PR |
 | `IDLE_THRESHOLD_SECS` | `1800` | Flag agents idle >30min with zero changes |
+
+Personal overrides in `config.local.env` (example):
+
+```bash
+TG_CHAT_ID="-100xxxxxxxxxx"
+KNOWN_PROJECTS=(
+  "$HOME/projects/my-org/repo-a"
+  "$HOME/projects/my-org/repo-b"
+)
+```
 
 ---
 
@@ -780,15 +806,17 @@ SQLite database (`foundry.db`) with three tables: `tasks`, `events`, `patterns`.
 
 ## Known Projects
 
-Configured in `config.env` under `KNOWN_PROJECTS`:
+Configured in `config.local.env` (gitignored) under `KNOWN_PROJECTS`:
 
+```bash
+# In your config.local.env
+KNOWN_PROJECTS=(
+  "$HOME/projects/my-org/repo-a"
+  "$HOME/projects/my-org/repo-b"
+)
 ```
-~/projects/primal-meat-club/aura-shopify     # Shopify store (pnpm, Next.js, Supabase)
-~/projects/primal-meat-club/ad-engine        # Ad management (pnpm, Next.js)
-~/projects/merlinrabens/growthpulse          # Growth analytics (pnpm, Next.js)
-~/projects/huklberry/lead-gen                # Lead generation (pnpm, Next.js)
-~/projects/merlinrabens/avatarfunnels        # Avatar funnels website
-```
+
+Used by `foundry scan`, `foundry queue`, and `foundry auto` to discover specs and issues.
 
 ---
 
