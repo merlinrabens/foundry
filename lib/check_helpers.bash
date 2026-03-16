@@ -85,6 +85,7 @@ _evaluate_pr() {
   [ -n "$codex_state" ] && [ "$codex_state" != "null" ] && _PR_CODEX_REVIEWED=1
 
   # Gemini — always count inline findings (even low-priority ones need addressing)
+  _PR_GEMINI_FINDINGS=0
   local gemini_state gemini_check_state="" gemini_findings=0
   gemini_state=$(get_reviewer_state "$latest_reviews" '.login | startswith("gemini-code-assist")')
   if [ -z "$gemini_state" ] || [ "$gemini_state" = "null" ]; then
@@ -108,6 +109,7 @@ _evaluate_pr() {
       gemini_findings=$(gh api "repos/${repo_slug}/pulls/${pr_num_for_gem}/comments" \
         --jq '[.[] | select(.user.login | startswith("gemini-code-assist"))] | length' 2>/dev/null || echo "0")
     fi
+    _PR_GEMINI_FINDINGS="$gemini_findings"
     detect_gemini_approval "$gemini_state" "$gemini_findings" "$gemini_check_state" && _PR_GEMINI_APPROVED=1
   fi
 
