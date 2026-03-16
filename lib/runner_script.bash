@@ -52,7 +52,7 @@ if [ -z "$_claude_token" ]; then
     _keychain_json=$(secret-tool lookup service "Claude Code-credentials" 2>/dev/null || echo "")
   fi
   if [ -n "$_keychain_json" ]; then
-    _claude_token=$(echo "$_keychain_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('claudeAiOauth',{}).get('accessToken',''))" 2>/dev/null || echo "")
+    _claude_token=$(echo "$_keychain_json" | grep -oE 'sk-ant-oat01-[A-Za-z0-9_-]+' | head -1)
     if [ -n "$_claude_token" ]; then
       _claude_auth_type="credential-store"
     fi
