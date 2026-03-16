@@ -99,8 +99,18 @@ jobs:
 
             After completing your analysis, you MUST submit exactly ONE formal review using `gh pr review`. NEVER use `--comment` — it does not register as a proper review verdict.
 
-            - If the change is a NET POSITIVE (even with minor nits): Run `gh pr review ${{ github.event.pull_request.number }} --approve --body "Your feedback summary"`
-            - If you found critical issues that MUST be fixed before merge: Run `gh pr review ${{ github.event.pull_request.number }} --request-changes --body "Your feedback summary"`
+            FORMAT your review body as GitHub-flavored Markdown:
+            - Start with `## Verdict: Approve ✓` or `## Verdict: Changes Requested ✗`
+            - One sentence summary of the change and your overall assessment.
+            - Use `### Feedback` heading, then numbered items.
+            - Prefix non-blocking suggestions with `**Nit:**`
+            - Reference files with relative paths and line numbers.
+            - Use fenced code blocks for suggested fixes.
+            - Keep it concise. No filler, no restating the PR description.
+
+            Submit the review with `gh pr review`:
+            - If the change is a NET POSITIVE (even with minor nits): `gh pr review ${{ github.event.pull_request.number }} --approve --body "..."`
+            - If you found critical issues that MUST be fixed before merge: `gh pr review ${{ github.event.pull_request.number }} --request-changes --body "..."`
 
             IMPORTANT: You MUST choose either --approve or --request-changes. There is no third option. Nits and minor suggestions go in --approve with the feedback in the body. Only use --request-changes for blocking issues (security, correctness, architecture).
 
