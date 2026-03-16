@@ -195,7 +195,12 @@ _try_respawn_or_exhaust() {
   local pr_url="${10:-}"
 
   if [ "$attempts" -lt "$max_attempts" ]; then
-    log_warn "  Auto-respawning (attempt $((attempts + 1))/$max_attempts)..."
+    # Exponential backoff: 30s, 60s, 120s, 240s between respawns
+    # Prevents burning all retries in seconds when agents crash immediately
+    local backoff_secs=$(( 30 * (1 << (attempts > 4 ? 4 : attempts)) ))
+    [ "$backoff_secs" -gt 300 ] && backoff_secs=300
+    log_warn "  Auto-respawning (attempt $((attempts + 1))/$max_attempts) after ${backoff_secs}s backoff..."
+    sleep "$backoff_secs"
     # No TG notification for intermediate respawn cycles — only notify on exhaustion or ready
     if cmd_respawn "$task_id"; then
       return 0
