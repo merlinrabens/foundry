@@ -643,11 +643,34 @@ class ACPOrchestrator:
                 # check.bash will evaluate reviews/CI and transition from there.
                 if final_status == "completed":
                     row = conn.execute(
-                        "SELECT pr FROM tasks WHERE id = ?", (task_id,)
+                        "SELECT pr, branch FROM tasks WHERE id = ?", (task_id,)
                     ).fetchone()
-                    if row and row[0]:
+                    pr_val = row[0] if row else None
+
+                    # PR might not be in registry yet (agent just created it).
+                    # Check GitHub directly if branch exists.
+                    if not pr_val and row and row[1]:
+                        try:
+                            import subprocess as _sp
+                            pr_num = _sp.run(
+                                ["gh", "pr", "list", "--head", row[1],
+                                 "--json", "number", "--jq", ".[0].number"],
+                                capture_output=True, text=True, timeout=15,
+                                cwd=self.worktree,
+                            ).stdout.strip()
+                            if pr_num:
+                                pr_val = pr_num
+                                conn.execute(
+                                    "UPDATE tasks SET pr = ? WHERE id = ?",
+                                    (pr_num, task_id),
+                                )
+                                self._log(f"Discovered PR #{pr_num} on branch {row[1]}")
+                        except Exception as e:
+                            self._log(f"PR discovery failed: {e}")
+
+                    if pr_val:
                         final_status = "pr-open"
-                        self._log(f"Task has PR ({row[0]}), setting pr-open instead of completed")
+                        self._log(f"Task has PR ({pr_val}), setting pr-open instead of completed")
 
                 now = int(time.time())
                 completed_at = now if final_status not in ("pr-open", "running") else None
