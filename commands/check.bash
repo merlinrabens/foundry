@@ -181,7 +181,7 @@ cmd_check() {
 
   if [ "$running_count" -eq 0 ] && [ "$agent_done_count" -eq 0 ] && [ "$monitoring_count" -eq 0 ] && [ "$respawn_count" -eq 0 ]; then
     log "No running or monitored agents."
-    return 0
+    # Don't return early: reconciliation + auto-prune still need to run
   fi
 
   [ "$running_count" -gt 0 ] && log "Checking $running_count running agent(s)..."
