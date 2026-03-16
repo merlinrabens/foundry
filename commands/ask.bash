@@ -11,7 +11,9 @@ cmd_ask() {
     echo "Send a question to a running agent and get a reply."
     echo "Works only with native OpenClaw sessions (has sessionId)."
     echo ""
-    echo "Example: foundry ask aura-dashboard 'What is your current progress?'"
+    echo "Example: foundry ask aura-dashboard \"What is your current progress?\""
+    echo ""
+    echo "Note: Always quote the question to avoid shell interpretation of special characters."
     return 1
   fi
 
