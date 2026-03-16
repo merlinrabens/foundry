@@ -130,7 +130,7 @@ Budget: 20 fix cycles per attempt. 5 attempts per task. If it can't converge, it
   <img src="docs/gifs/foundry-status.gif" alt="foundry status dashboard" width="100%">
 </p>
 
-`foundry status` shows all active tasks with CRKGS columns:
+`foundry status` shows all active tasks with BACKEND and CRKGS columns:
 
 | Letter | Gate |
 |--------|------|
@@ -162,17 +162,6 @@ Most tasks complete on the first attempt. Persistent failures get escalated to y
 ## Visual Evidence: Agents That Prove Their Work
 
 For PRs with frontend changes, Foundry expects visual proof. Screenshots, videos, before/after comparisons. If the PR body has no images and the diff touches `.tsx`/`.jsx`/`.vue`/`.css`, Foundry flags it.
-
-Add the `ready-for-evidence` label to trigger the `visual-evidence.yml` workflow:
-
-1. Detects which routes changed
-2. Deploys a preview build
-3. Captures screenshots of affected pages
-4. Posts them as PR comments
-
-Your stakeholders open the PR, see screenshots, approve or request changes. No dev environment needed.
-
----
 
 ## Telegram Topics: One Thread Per Agent
 
@@ -310,8 +299,9 @@ foundry respawn <task-id>             Retry a failed task
 foundry orchestrate [repo]            Full auto: scan + spawn + check
 foundry cleanup                       Archive completed tasks
 foundry steer <task-id> <msg>         Redirect agent mid-flight via ACP
+foundry ask <task-id> <question>     Ask agent a question, get reply
 foundry diagnose <task-id>            Debug a stuck task
-foundry peek <task-id>                View agent's last output
+foundry peek <task-id>                Structured JSON status (registry + live)
 foundry nudge <task-id>               Unstick a stalled agent
 foundry design <repo> <spec> [agent]  Gemini-first design pipeline
 foundry recommend <spec>              Suggest best agent for task
@@ -372,15 +362,39 @@ The cron jobs below are the **fallback** for edge cases. The self-hosted runner 
 
 ## Configuration
 
-All config in `config.env`:
+Foundry uses a **two-file config system**:
+
+| File | Tracked? | Purpose |
+|------|----------|---------|
+| `config.env` | Yes (in git) | Safe defaults, no secrets, no personal data |
+| `config.local.env` | No (gitignored) | Your overrides: repos, Telegram IDs, personal paths |
+
+The dispatcher sources `config.env` first, then `config.local.env` on top. Any variable in `config.local.env` wins.
+
+**Important:** Bash arrays like `KNOWN_PROJECTS=()` are **replaced**, not merged. Your `config.local.env` must contain the full list of projects, not just additions.
 
 ```bash
+# config.env — safe defaults (committed)
+DEFAULT_MODEL=codex        # Default backend (codex, claude, gemini)
+ENABLED_BACKENDS=codex,claude,gemini  # Available backends
 MAX_RETRIES=5              # Spawn attempts per task
 MAX_REVIEW_FIXES=20        # Review-fix cycles per attempt
 MAX_CONCURRENT=4           # Parallel agents
 AGENT_TIMEOUT=1800         # 30 min per agent run
 AUTO_MERGE_LOW_RISK=false  # Auto-merge docs/tests PRs
+KNOWN_PROJECTS=()          # Empty — set in config.local.env
+
+# config.local.env — your overrides (gitignored, never committed)
+DEFAULT_MODEL=claude                  # Override default backend
+ENABLED_BACKENDS=claude,gemini        # Disable codex (e.g., rate limited)
+TG_CHAT_ID="-100xxxxxxxxxx"
+KNOWN_PROJECTS=(
+  "$HOME/projects/my-org/my-repo"
+  "$HOME/projects/my-org/another-repo"
+)
 ```
+
+`foundry setup` creates `config.local.env` for you during initial configuration.
 
 ## Architecture
 
@@ -400,7 +414,8 @@ foundry (CLI entry point)
 ├── lib/                # Business logic
 │   ├── acp_orchestrator.py   # ACP protocol handler (all backends)
 │   ├── runner_script.bash    # Agent runner generator
-│   ├── jerry_routing.bash    # Agent selection
+│   ├── session_bridge.bash   # OpenClaw native session bridge
+│   ├── jerry_routing.bash    # Smart agent selection
 │   ├── review_pipeline.bash  # 3-reviewer orchestration
 │   ├── spawn_guards.bash     # Pre-spawn validation
 │   ├── respawn_helpers.bash  # Failure context gathering
@@ -409,9 +424,10 @@ foundry (CLI entry point)
 │   ├── claude-code-review.yml
 │   ├── codex-review.yml
 │   ├── gemini-check.yml
-│   ├── foundry-gate.yml      # Event-driven bridge
-│   └── visual-evidence.yml   # Screenshot capture
-└── tests/              # 385 tests (bats)
+│   └── foundry-gate.yml      # Event-driven bridge
+├── openclaw/           # OpenClaw skill (installed during setup)
+│   └── SKILL.md
+└── tests/              # 396 tests (bats)
 ```
 
 ## License

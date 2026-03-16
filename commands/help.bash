@@ -13,6 +13,7 @@ COMMANDS
   logs <task-id>                    Tail agent log file
   kill <task-id>                    Stop a running agent
   steer <task-id> <msg>             Mid-course correction via ACP signal
+  ask <task-id> <question>          Send question to agent, get reply (bidirectional)
   respawn <task-id> [--prompt-file]  Retry failed agent with failure context
   design <repo> <spec> [agent]      Gemini design -> agent pipeline
   diagnose [--fix]                  Self-repair infrastructure diagnostics
@@ -39,6 +40,7 @@ EXAMPLES
   foundry respawn aura-05-dashboard
   foundry register ~/projects/primal-meat-club/aura-shopify 884
   foundry steer aura-05-dashboard 'Focus on API first, not the UI'
+  foundry ask aura-05-dashboard 'What is your current progress?'
   foundry recommend specs/backlog/05-dashboard.md
   foundry queue
   foundry patterns
@@ -76,7 +78,9 @@ HOW IT WORKS
   6. check loop (3 min) = fallback for edge cases Gate misses
   7. Failed agents auto-respawn with failure context (up to 5 retries)
   8. Zero AI tokens burned on monitoring — it's all deterministic
-  9. steer sends mid-flight direction changes via USR1 signal + JSON-RPC
+  9. steer sends mid-flight direction changes via ACP session
+  10. ask enables bidirectional agent communication (question + reply)
+  11. Usage limit errors (rate limit, quota) skip respawn and alert via Telegram
 
 CHECK STATUS (shown in status command)
   C = CI passed        R = Claude review
