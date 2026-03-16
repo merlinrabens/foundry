@@ -151,15 +151,15 @@ _gather_review_feedback() {
   # Auto-detect cutoff: use the latest force-push / push event timestamp
   # This ensures we only feed reviews that were written AFTER the latest code push
   if [ -z "$since_ts" ]; then
-    since_ts=$(gh api "repos/${repo_slug}/pulls/${pr_num}" \
+    since_ts=$(timeout 15 gh api "repos/${repo_slug}/pulls/${pr_num}" \
       --jq '.updated_at // empty' 2>/dev/null || echo "")
     # Better: get the latest commit's committer date from the PR head
     local head_sha
-    head_sha=$(gh api "repos/${repo_slug}/pulls/${pr_num}" \
+    head_sha=$(timeout 15 gh api "repos/${repo_slug}/pulls/${pr_num}" \
       --jq '.head.sha // empty' 2>/dev/null || echo "")
     if [ -n "$head_sha" ]; then
       local commit_date
-      commit_date=$(gh api "repos/${repo_slug}/commits/${head_sha}" \
+      commit_date=$(timeout 15 gh api "repos/${repo_slug}/commits/${head_sha}" \
         --jq '.commit.committer.date // empty' 2>/dev/null || echo "")
       [ -n "$commit_date" ] && since_ts="$commit_date"
     fi
@@ -173,21 +173,21 @@ _gather_review_feedback() {
 
   # 1. PR reviews (Claude uses gh pr review --request-changes)
   local review_bodies
-  review_bodies=$(gh api "repos/${repo_slug}/pulls/${pr_num}/reviews" \
+  review_bodies=$(timeout 15 gh api "repos/${repo_slug}/pulls/${pr_num}/reviews" \
     --jq "[.[] | select(.body != \"\" and .body != null and .state != \"APPROVED\" ${ts_filter:+and (.submitted_at // \"\" | . >= \"${since_ts}\")})] | .[] | \"[\\(.user.login) - \\(.state)]:\\n\\(.body)\"" \
     2>/dev/null || echo "")
   [ -n "$review_bodies" ] && _FAILURE_DETAILS="${_FAILURE_DETAILS}\n\n── PR Reviews ──\n${review_bodies}"
 
   # 2. PR comments (Codex review posts via issues.createComment)
   local pr_comments
-  pr_comments=$(gh api "repos/${repo_slug}/issues/${pr_num}/comments" \
+  pr_comments=$(timeout 15 gh api "repos/${repo_slug}/issues/${pr_num}/comments" \
     --jq "[.[] | select(.body | test(\"Codex Review|Review|Finding|Bug|Issue\"; \"i\")) | select(true ${since_ts:+and (.created_at >= \"${since_ts}\")})] | .[] | \"[\\(.user.login)]:\\n\\(.body)\"" \
     2>/dev/null || echo "")
   [ -n "$pr_comments" ] && _FAILURE_DETAILS="${_FAILURE_DETAILS}\n\n── PR Comments (Codex/bot reviews) ──\n${pr_comments}"
 
   # 3. Inline review comments (code-level feedback)
   local inline_comments
-  inline_comments=$(gh api "repos/${repo_slug}/pulls/${pr_num}/comments" \
+  inline_comments=$(timeout 15 gh api "repos/${repo_slug}/pulls/${pr_num}/comments" \
     --jq "[.[] | select(.body != \"\" ${since_ts:+and (.created_at >= \"${since_ts}\")}) ] | .[] | \"\\(.path):\\(.line // .original_line) [\\(.user.login)]: \\(.body)\"" \
     2>/dev/null || echo "")
   [ -n "$inline_comments" ] && _FAILURE_DETAILS="${_FAILURE_DETAILS}\n\n── Inline Code Comments ──\n${inline_comments}"
