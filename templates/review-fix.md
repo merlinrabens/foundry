@@ -12,14 +12,17 @@ Your code is working and CI passes, but code reviewers have requested changes. Y
 
 ## Workflow
 
-1. Read the review comments carefully — understand EXACTLY what each reviewer wants changed
-2. For each comment, make the specific change requested
-3. If a reviewer's suggestion conflicts with the original task requirements, prioritize the original spec
-4. Run tests and ensure everything passes
-5. Commit with a DESCRIPTIVE message explaining what you addressed:
+1. First, sync with main to resolve any merge conflicts:
+   `git fetch origin main && git merge origin/main --no-edit`
+   If there are conflicts, resolve them sensibly (prefer main for deleted files, keep your changes for new code).
+2. Read the review comments carefully — understand EXACTLY what each reviewer wants changed
+3. For each comment, make the specific change requested
+4. If a reviewer's suggestion conflicts with the original task requirements, prioritize the original spec
+5. Run tests and ensure everything passes
+6. Commit with a DESCRIPTIVE message explaining what you addressed:
    `git add -A && git commit -m "fix: <describe what you changed based on review>"`
    Example: `git commit -m "fix: extract shared validation into helper, add missing error boundary"`
-6. Push: `git push origin HEAD`
+7. Push: `git push origin HEAD`
 
 ## Rules
 
