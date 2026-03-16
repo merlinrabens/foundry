@@ -468,10 +468,19 @@ class ACPOrchestrator:
                 self._log(f"Prompt failed: {error_msg}")
                 self._error = error_msg
 
-                # Usage limit: don't respawn (pointless), alert immediately
-                if "usage_limit" in error_info or "usage limit" in error_msg.lower():
-                    self._log("USAGE LIMIT HIT — marking as exhausted to prevent respawn")
-                    exit_code = 99  # Special code: check.bash treats as exhausted
+                # Usage/rate/quota limit: don't respawn (pointless), alert immediately
+                # Codex: "usage_limit_exceeded", "usage limit"
+                # Claude: "rate_limit_error", "credit balance", "overloaded"
+                # Gemini: "RESOURCE_EXHAUSTED", "quota exceeded", "rate limit"
+                error_lower = (error_msg + " " + error_info).lower()
+                is_limit = any(k in error_lower for k in (
+                    "usage_limit", "usage limit", "rate_limit", "rate limit",
+                    "quota", "resource_exhausted", "credit", "billing",
+                    "overloaded", "capacity",
+                ))
+                if is_limit:
+                    self._log("USAGE/RATE LIMIT HIT — marking as exhausted to prevent respawn")
+                    exit_code = 99  # Special code: write_done treats as exhausted
                     self._send_usage_limit_alert(error_msg)
                 else:
                     exit_code = 1
