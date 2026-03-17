@@ -94,10 +94,18 @@ _check_pr_status() {
     (cd "$check_dir" 2>/dev/null && gh pr edit ${pr_ref:+"$pr_ref"} \
       --add-label "ready-for-evidence" 2>/dev/null) || true
     if [ "$last_notified" != "ready" ]; then
-      registry_update_field "$id" "lastNotifiedState" "ready"
-      _build_pr_status_html "$check_dir" "$pr_ref"
-      tg_notify_task "$id" "$_PR_STATUS_HTML" "HTML" \
-        || registry_update_field "$id" "lastNotifiedState" ""
+      # CAS to prevent duplicate notifications from parallel checks
+      local _cas_ok
+      _cas_ok=$(_db "UPDATE tasks SET last_notified_state = 'ready' WHERE id = '$(echo "$id" | sed "s/'/''/g")' AND (last_notified_state IS NULL OR last_notified_state != 'ready'); SELECT changes();" 2>/dev/null)
+      if [ "$_cas_ok" = "1" ]; then
+        if _build_pr_status_html "$check_dir" "$pr_ref" && [ -n "$_PR_STATUS_HTML" ]; then
+          tg_notify_task "$id" "$_PR_STATUS_HTML" "HTML" \
+            || registry_update_field "$id" "lastNotifiedState" ""
+        else
+          # Couldn't resolve PR info, reset so we retry next cycle
+          registry_update_field "$id" "lastNotifiedState" ""
+        fi
+      fi
     fi
     return 0  # Ready
   else

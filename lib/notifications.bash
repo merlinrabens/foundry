@@ -94,6 +94,12 @@ _build_pr_status_html() {
   local emoji="✅"
   [ "$all_green" = "false" ] && emoji="❌"
 
+  # Skip notification if we couldn't resolve PR number (avoids empty "PR #\nPR" messages)
+  if [ -z "$pr_number" ]; then
+    _PR_STATUS_HTML=""
+    return 1
+  fi
+
   # Build HTML message
   local msg
   msg="${emoji} <b>PR #${pr_number}</b>"$'\n'"${pr_title}"$'\n'
