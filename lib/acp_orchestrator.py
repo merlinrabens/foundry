@@ -548,7 +548,10 @@ class ACPOrchestrator:
                     pass
 
                 self._log("Sending SIGTERM...")
-                self.process.terminate()
+                try:
+                    self.process.terminate()
+                except ProcessLookupError:
+                    self._log("Adapter already exited before SIGTERM")
                 try:
                     await asyncio.wait_for(self.process.wait(), timeout=3)
                 except asyncio.TimeoutError:
