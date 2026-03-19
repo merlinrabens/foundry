@@ -224,9 +224,37 @@ OpenClaw receives completion
 Done.
 ```
 
+### The Full Stack: Paperclip → OpenClaw → Foundry
+
+Foundry is the execution layer in a three-tier autonomous development stack:
+
+```
+Paperclip (CEO/PM layer)
+  Creates issues, assigns priorities, tracks progress
+    ↓ wake event
+OpenClaw (orchestrator layer)
+  Receives wake, loads agent context, routes by label
+    ↓ foundry spawn / foundry orchestrate
+Foundry (execution layer)
+  Spawns coding agents, manages worktrees, runs review loop
+    ↓ PR with fixes
+GitHub (delivery layer)
+  CI, code review, merge, issue auto-close
+    ↓ status update
+Paperclip (closes the loop)
+  Agent reports PR link back to the original issue
+```
+
+[Paperclip](https://github.com/paperclipai/paperclip) acts as the product management layer. Its CEO agent creates prioritized issues with labels. OpenClaw wakes on those events and routes them through Foundry based on label:
+
+- `engineering` / `foundry` → `foundry spawn` (isolated worktree, own branch + PR)
+- `ops` → handled directly by the orchestrator agent (config, crons, research)
+
+The full loop has been verified end-to-end: CEO creates issue → OpenClaw agent wakes → creates GitHub issue → spawns Foundry agent → agent codes + opens PR → reviews pass → agent reports PR link back to Paperclip. Zero human keystrokes.
+
 ### Without OpenClaw
 
-Foundry works perfectly standalone. Cron jobs + local agents + GitHub. OpenClaw is the upgrade path when you want remote control, push notifications, and multi-machine scaling.
+Foundry works perfectly standalone. Cron jobs + local agents + GitHub. OpenClaw is the upgrade path when you want remote control, push notifications, and multi-machine scaling. Add Paperclip on top when you want autonomous project management.
 
 ---
 
